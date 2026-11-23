@@ -59,7 +59,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon -x :app:prepareOfflineTranslateLibraries
 
       - name: Upload APK
         uses: actions/upload-artifact@v7
