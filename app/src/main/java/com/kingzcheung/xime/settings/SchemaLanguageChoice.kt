@@ -11,9 +11,13 @@ import android.content.Context
 object SchemaLanguageChoice {
     private const val PREFIX = "schema_language_"
 
-    /** 能选的语言。英文和西班牙、德、法、俄、韩语直接打字母、不经过 Rime 方案，不列。 */
+    /**
+     * 能选的语言。以前英文和西班牙、德、法、俄、韩语一样直接打字母、不经过 Rime 方案，所以不列；
+     * 现在英文也有走 Rime 的单词/整句方案（内置 cyime_english、用户导入的万象英文等），英文也能选。
+     * 西班牙、德、法、俄、韩语等仍直接打字母、不经过 Rime 方案，不列。
+     */
     val choices: List<InputLanguage>
-        get() = InputLanguage.supported.filter { it != InputLanguage.ENGLISH && !it.typesLettersDirectly }
+        get() = InputLanguage.supported.filter { it == InputLanguage.ENGLISH || !it.typesLettersDirectly }
 
     /**
      * 用户选的语言：选了「不指定」是 [InputLanguage.UNSPECIFIED]；没选过、存着不能选的旧值时为 null。

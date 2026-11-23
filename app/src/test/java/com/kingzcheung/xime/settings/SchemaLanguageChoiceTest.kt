@@ -86,12 +86,14 @@ class SchemaLanguageChoiceTest {
         assertEquals(InputLanguage.CHINESE, imported.language)
     }
 
-    @Test fun `only languages typed through a Rime schema are offered`() {
+    @Test fun `only languages typed through a Rime schema are offered, plus English`() {
         val choices = SchemaLanguageChoice.choices
         assertTrue(InputLanguage.CHINESE in choices)
-        assertFalse(InputLanguage.ENGLISH in choices)
+        // 英文现在有走 Rime 的单词/整句方案（cyime_english、导入的万象英文），也能选。
+        assertTrue(InputLanguage.ENGLISH in choices)
         assertFalse(InputLanguage.UNSPECIFIED in choices)
-        assertTrue(choices.none { it.typesLettersDirectly })
+        // 仍直接打字母的（西班牙、德、法、俄、韩）不列。
+        assertTrue(choices.none { it.typesLettersDirectly && it != InputLanguage.ENGLISH })
         // 存着一个直接打字母的语言（比如旧数据）时不生效，按没选处理（汉字名当中文）。
         assertEquals(InputLanguage.CHINESE, SchemaLanguageChoice.applyTo(schema("sbyp"), InputLanguage.GERMAN).language)
     }
