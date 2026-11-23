@@ -1,0 +1,48 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    # 每天 UTC 02:30 自动同步一次（可改成你想要的时间，UTC 时间）
+    - cron: '30 2 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 同步上游并开 PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/Cyletix/CyIME.git || true
+          git fetch upstream main
+
+          BRANCH="sync/upstream-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+
+          if git merge upstream/main --no-edit; then
+            echo "✅ 已干净合并上游 main"
+          else
+            echo "⚠️ 存在合并冲突，保留冲突标记，PR 里手动解决"
+            git add -A
+            git commit -m "merge upstream/main (需要手动解决冲突)" --no-verify || true
+          fi
+
+          git push -u origin "$BRANCH"
+
+          gh pr create --base main --head "$BRANCH" \
+            --title "同步上游 Cyletix/CyIME" \
+            --body "由 Actions 定时创建的上游同步 PR。无冲突可直接 Merge；有冲突需手动解决。" \
+            || echo "PR 创建失败（可能已存在或上游无新提交）"
