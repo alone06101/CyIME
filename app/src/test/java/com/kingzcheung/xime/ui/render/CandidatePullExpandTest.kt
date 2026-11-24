@@ -42,7 +42,32 @@ class CandidatePullExpandTest {
 
     @Before fun swipeExpandOn() { SettingsPreferences.setCandidateSwipeExpand(ApplicationProvider.getApplicationContext(), true) }
 
-    @After fun resetSwipeExpand() { prefs.edit().remove(SettingsPreferences.KEY_CANDIDATE_SWIPE_EXPAND).commit() }
+    @After fun resetSwipeExpand() {
+        prefs.edit().remove(SettingsPreferences.KEY_CANDIDATE_SWIPE_EXPAND).remove(SettingsPreferences.KEY_CANDIDATE_CLOSE_ON_RIGHT)
+            .remove(SettingsPreferences.KEY_SHOW_CANDIDATE_CANCEL_BUTTON).commit()
+    }
+
+    /** 「经典」开了左右滑：右边 ▾ 照常展开、▴ 照常收回，往左拉也能展开、往右划也能收回（11-23）。 */
+    @Test fun classicWithSwipeHasBothArrowAndPull() {
+        val expanded = mutableStateOf(false)
+        rule.setContent {
+            CandidateBar(state = CandidateBarState.ChineseCandidates(listOf("你好", "你"), inputText = "nihao", hasMore = true),
+                candidatePageExpanded = expanded.value, visuals = visuals,
+                callbacks = CandidateBarCallbacks(onCandidateSelect = {}, onCancelInput = {},
+                    onShowMoreCandidates = { expanded.value = true },
+                    onCollapseCandidates = { expanded.value = false },
+                    onBack = { expanded.value = false }, onHideKeyboard = {}),
+                showPreeditPreview = false, modifier = Modifier.width(360.dp))
+        }
+        rule.onNodeWithTag("candidate-expansion").performClick()
+        rule.runOnIdle { assertEquals(true, expanded.value) }
+        rule.onNodeWithTag("candidate-expansion").performClick()
+        rule.runOnIdle { assertEquals(false, expanded.value) }
+        rule.onNodeWithTag("candidate-pull-expand", useUnmergedTree = true).pullAcross()
+        rule.runOnIdle { assertEquals(true, expanded.value) }
+        rule.onNodeWithTag("candidate-pull-expand", useUnmergedTree = true).pullAcross(leftward = false)
+        rule.runOnIdle { assertEquals(false, expanded.value) }
+    }
 
     /** 默认关：往左拉、往右拉都不展开不收回，▾ 照常展开、▴ 照常收回（和 1.15.101 一样）。 */
     @Test fun swipeExpandIsOffByDefault() {
@@ -72,14 +97,16 @@ class CandidatePullExpandTest {
         rule.runOnIdle { assertEquals(1, backs); assertEquals(false, expanded.value) }
     }
 
-    /** 开关打开：右边不放 ▾/▴，打字、展开着都是收起键盘（11-21 他：取消靠左、收键盘靠右、展开收起靠滑）。 */
-    @Test fun swipeModeRightButtonHidesKeyboard() {
+    /** 「右边一处关」：右边不放 ▾/▴，打字、展开着右边都是关（这里没有取消键，就是收起键盘），展开收起靠滑。 */
+    @Test fun rightCloseModeHasNoArrow() {
+        SettingsPreferences.setCandidateCloseOnRight(ApplicationProvider.getApplicationContext(), true)
         val expanded = mutableStateOf(false)
         var hides = 0
         rule.setContent {
             CandidateBar(state = CandidateBarState.ChineseCandidates(listOf("你好", "你"), inputText = "nihao", hasMore = true),
                 candidatePageExpanded = expanded.value, visuals = visuals,
-                callbacks = CandidateBarCallbacks(onCandidateSelect = {}, onCancelInput = {},
+                // 没有取消回调的宿主：右边那一格直接是收起键盘。
+                callbacks = CandidateBarCallbacks(onCandidateSelect = {},
                     onShowMoreCandidates = { expanded.value = true },
                     onCollapseCandidates = { expanded.value = false },
                     onBack = { expanded.value = false }, onHideKeyboard = { hides++ }),

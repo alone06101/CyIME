@@ -39,6 +39,11 @@ internal data class KeyGestureActions(
      * 没给时按键宽均分（旧算法）。参数是项数、是不是图标项。
      */
     val longPressMenuCells: ((Int, Boolean) -> LongPressMenuCells)? = null,
+    /**
+     * 长按到点时要排在手指底下、默认选中的项，按先后（26 键字母键：先大写、再小写，见 [letterMenuCenterItems]）。
+     * 第一项放在手指下那格并选中，后面的挨着放，其余项按原顺序从左往右填剩下的格（[arrangeLongPressMenu]）。空的照旧。
+     */
+    val longPressCenterItems: List<String> = emptyList(),
     val onLongPress: (() -> Unit)? = null,
     val onLongPressSelect: ((String) -> Unit)? = null,
     val onLongPressFeedback: () -> Unit = {},
@@ -151,7 +156,7 @@ internal suspend fun PointerInputScope.detectExclusiveKeyGestures(
         // 滑到哪个键按哪个键：手指已经滑出过这个键（[KeyGestureActions.slideOver]）。
         var slid = false
         var selectedIndex = 0
-        val items = actions.longPressItems
+        var items = actions.longPressItems
         // 三项以上的长按菜单（西欧字母、拼音声调，七八个变音）：每格按画出来的格宽算，起点是手指下的那格。
         // 以前整条挤在一个键宽里，八项时手指挪八分之一个键就换一格（用户 11-15）。两项（上下角标）照旧。
         val cellsFor = actions.longPressMenuCells?.takeIf { items.size > 2 }
@@ -165,6 +170,11 @@ internal suspend fun PointerInputScope.detectExclusiveKeyGestures(
             if (items.isNotEmpty()) {
                 menuCells = cellsFor?.invoke(items.size, actions.longPressDrawableIds.isNotEmpty())
                 menuCells?.let { selectedIndex = KeyboardKeyMetrics.longPressMenuIndex(lastX, it, items.size) }
+                if (actions.longPressCenterItems.isNotEmpty()) {
+                    // 两项（[k, K]）没有分格、从第一项起选：大写排第一就是默认选中，往右滑选小写。
+                    items = arrangeLongPressMenu(items, actions.longPressCenterItems, selectedIndex)
+                    selectedIndex = items.indexOf(actions.longPressCenterItems.first()).coerceAtLeast(0)
+                }
                 actions.onPreview(SwipeState(isPressed = true, isLongPress = true,
                     longPressItems = items, selectedLongPressIndex = selectedIndex,
                     longPressDrawableIds = actions.longPressDrawableIds))
@@ -289,6 +299,29 @@ internal suspend fun PointerInputScope.detectExclusiveKeyGestures(
             actions.onPreview(SwipeState())
         }
     } }
+}
+
+/**
+ * 把 [center] 里的项排到 [fingerCell] 附近：第一项正好在 [fingerCell]，后面的按离它近的格先右后左放；
+ * 其余项保持原来的先后，从左往右填空着的格。[center] 里没出现在 [items] 的项跳过；排不出来时原样返回。
+ * 例：o O ō ó ǒ ò ô õ ö ø，手指在第 8 格、center = [O, o] → ō ó ǒ ò ô õ ö ø O o（群友 11-23：长按离手指最近的是大小写字母）。
+ */
+internal fun arrangeLongPressMenu(items: List<String>, center: List<String>, fingerCell: Int): List<String> {
+    val wanted = center.filter { it in items }.distinct()
+    if (wanted.isEmpty() || items.size != items.distinct().size) return items
+    val n = items.size
+    val slots = arrayOfNulls<String>(n)
+    var placed = 0
+    val start = fingerCell.coerceIn(0, n - 1)
+    for (item in wanted) {
+        val cell = if (placed == 0) start else (1 until n).asSequence()
+            .flatMap { d -> sequenceOf(start + d, start - d) }.firstOrNull { it in 0 until n && slots[it] == null } ?: return items
+        slots[cell] = item
+        placed++
+    }
+    val rest = items.filter { it !in wanted }.iterator()
+    for (i in 0 until n) if (slots[i] == null) slots[i] = rest.next()
+    return slots.map { it!! }
 }
 
 /** 旧算法：整条按键宽均分，从第一项起（两项的上下角标还用它，手感不变）。 */

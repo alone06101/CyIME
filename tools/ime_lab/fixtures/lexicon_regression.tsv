@@ -1254,3 +1254,84 @@ user-gezhileyi	9	439445394	!何枝可依	1	user	2026-11-20	打到「搁置了一
 must-gezhileyiduanshijian	9	43944539438267445426	搁置了一段时间	1	user	2026-11-20	排序必过句（11-20 九键反馈，古诗词移出词库）
 must-gezhileyiduanshijian-26	26	gezhileyiduanshijian	搁置了一段时间	1	user	2026-11-20	排序必过句
 user-gezhileyiduanshijia-9	9	4394453943826744542	搁置了一段时间	1	user	2026-11-20	最后一个音节 jian 只打到 jia（542）时整句曾是「何止可以断食加」
+lex1122-xinguan	26	xinguan	新冠	1	lexicon-1122	2026-11-22	原 100；补后应排第 1
+lex1122-xiadan	26	xiadan	下单	1	lexicon-1122	2026-11-22	原 4885；补后应排第 1
+lex1122-zhenghuo	26	zhenghuo	整活	5	lexicon-1122	2026-11-22	原 526；补后应排第 1；11-23 按现状记录（排第 3～5），不算门槛
+lex1122-yupiao	26	yupiao	余票	1	lexicon-1122	2026-11-22	词库没有（12306 常用）；补后应排第 1
+lex1122-weibo	26	weibo	微博	1	lexicon-1122	2026-11-22	原 3008；补后应排第 1
+lex1122-feishu	26	feishu	飞书	1	lexicon-1122	2026-11-22	原 47；补后应排第 1
+lex1122-bihuan	26	bihuan	闭环	1	lexicon-1122	2026-11-22	原 117；补后应排第 1
+lex1122-jidu	26	jidu	嫉妒	3	lexicon-1122	2026-11-22	规范词形，原 961 低于异形 忌妒 35519；补后应排第 3
+lex1122-tuiwei	26	tuiwei	推诿	2	lexicon-1122	2026-11-22	规范词形，原低于异形 推委；补后应排第 2
+lex1122-pita	26	pita	疲沓	1	lexicon-1122	2026-11-22	规范词形，原低于异形 疲塌；补后应排第 1
+lex1122-hesuan	26	hesuan	核酸	3	lexicon-1122	2026-11-22	原 45；补后应排第 3
+lex1122-baolei	26	baolei	爆雷	2	lexicon-1122	2026-11-22	原 100；补后应排第 2
+lex1122-quanzhan	26	quanzhan	全栈	3	lexicon-1122	2026-11-22	原 75；补后应排第 3
+lex1122-laqu	26	laqu	拉取	2	lexicon-1122	2026-11-22	原 58；补后应排第 2
+lex1122-biyuan	26	biyuan	闭源	5	lexicon-1122	2026-11-22	原 10；补后应排第 2；11-23 按现状记录（排第 3～5），不算门槛
+lex1122-chaodi	26	chaodi	抄底	2	lexicon-1122	2026-11-22	原 58；补后应排第 2
+lex1122-dingtou	26	dingtou	定投	2	lexicon-1122	2026-11-22	原 21；补后应排第 2
+lex1122-shengchengshi	26	shengchengshi	生成式	1	lexicon-1122	2026-11-22	原 18；补后应排第 1
+lex1122-sixin	26	sixin	私信	5	lexicon-1122	2026-11-22	原 2691；补后应排第 3；11-23 按现状记录（排第 3～5），不算门槛
+lex1122-tianna	26	tianna	天哪	2	lexicon-1122	2026-11-22	原 20；补后应排第 2
+lex1122-fanju	26	fanju	番剧	2	lexicon-1122	2026-11-22	原 271；补后应排第 2
+lex1122-buya	26	buya	补牙	2	lexicon-1122	2026-11-22	原 52；补后应排第 2
+lex1122-weijing	26	weijing	胃镜	3	lexicon-1122	2026-11-22	原 108；补后应排第 3
+lex1122-shuangjian	26	shuangjian	双减	5	lexicon-1122	2026-11-22	原 100；补后应排第 3；11-23 按现状记录（排第 3～5），不算门槛
+lex1122-meitong	26	meitong	美瞳	2	lexicon-1122	2026-11-22	原 347；补后应排第 2
+lex1122-xunlianji	26	xunlianji	训练集	1	lexicon-1122	2026-11-22	原 100；补后应排第 1
+lex1122-laqun	26	laqun	拉群	1	lexicon-1122	2026-11-22	词库没有；补后应排第 1
+lex1122-chunzhao	26	chunzhao	春招	1	lexicon-1122	2026-11-22	词库没有；补后应排第 1
+lex1122-lutie	26	lutie	撸铁	1	lexicon-1122	2026-11-22	词库没有；补后应排第 1
+lex1122-neg-jidu	26	jidu	极度	1	反例	2026-11-22	嫉妒 只升到异形词之上，极度 仍第一
+lex1122-neg-hesuan	26	hesuan	核算	1	反例	2026-11-22	核酸 只到第三，不抢 核算
+lex1122-neg-sixin	26	sixin	私心	1	反例	2026-11-22	私信 不抢 私心
+lex1122-neg-muji	26	mujixiadanle	母鸡下蛋了	1	反例	2026-11-22	下单 提到第一后整句仍要出 下蛋
+lex1122-neg-weibo	26	weibodeshouru	微薄的收入	1	反例	2026-11-22	微博 提到第一后整句仍要出 微薄
+lex1122b-zhifu	26	zhifu	支付	1	lexicon-1122	2026-11-22	原 22289，聊天混合后排第二
+lex1122b-youhui	26	youhui	优惠	1	lexicon-1122	2026-11-22	原 18194，聊天混合后排第二
+lex1122b-kuandai	26	kuandai	宽带	1	lexicon-1122	2026-11-22	原 13335，聊天混合后排第二
+lex1122b-zhuxiao	26	zhuxiao	注销	1	lexicon-1122	2026-11-22	原 11213，聊天混合后排第二
+lex1122b-zhongjie	26	zhongjie	中介	1	lexicon-1122	2026-11-22	原 15420，聊天混合后排第二
+lex1122b-fahuo	26	fahuo	发货	1	lexicon-1122	2026-11-22	原 13713，聊天混合后排第二
+lex1122b-zhekou	26	zhekou	折扣	1	lexicon-1122	2026-11-22	原 17993，聊天混合后排第二
+lex1122b-zhishu	26	zhishu	指数	1	lexicon-1122	2026-11-22	原 18195，聊天混合后排第二
+lex1122b-buwei	26	buwei	部位	1	lexicon-1122	2026-11-22	原 17614，聊天混合后排第二
+lex1122b-tuxing	26	tuxing	图形	1	lexicon-1122	2026-11-22	原 16307，聊天混合后排第二
+lex1122b-danji	26	danji	单击	1	lexicon-1122	2026-11-22	原 16270，聊天混合后排第二
+lex1122b-fudu	26	fudu	幅度	1	lexicon-1122	2026-11-22	原 12444，聊天混合后排第二
+lex1122b-gujia	26	gujia	股价	1	lexicon-1122	2026-11-22	原 12312，聊天混合后排第二
+lex1122b-quantao	26	quantao	全套	1	lexicon-1122	2026-11-22	原 11009，聊天混合后排第二
+lex1122b-jingdu	26	jingdu	精度	1	lexicon-1122	2026-11-22	原 32780，聊天混合后排第二
+lex1122b-pingzheng	26	pingzheng	凭证	1	lexicon-1122	2026-11-22	原 13610，聊天混合后排第二
+lex1122b-yuanma	26	yuanma	源码	1	lexicon-1122	2026-11-22	原 9144，聊天混合后排第二
+lex1122b-edu	26	edu	额度	1	lexicon-1122	2026-11-22	原 8274，聊天混合后排第二
+lex1122b-koufu	26	koufu	口服	1	lexicon-1122	2026-11-22	原 9324，聊天混合后排第二
+lex1122b-buban	26	buban	补办	1	lexicon-1122	2026-11-22	原 4048，聊天混合后排第二
+lex1122b-daozhang	26	daozhang	到账	1	lexicon-1122	2026-11-22	原 4251，聊天混合后排第二
+lex1122b-xianxue	26	xianxue	献血	1	lexicon-1122	2026-11-22	原 3784，聊天混合后排第二
+lex1122b-shangyue	26	shangyue	上月	1	lexicon-1122	2026-11-22	原 6782，聊天混合后排第二
+lex1122b-yanke	26	yanke	眼科	1	lexicon-1122	2026-11-22	原 4408，聊天混合后排第二
+lex1122b-geshui	26	geshui	个税	1	lexicon-1122	2026-11-22	原 3148，聊天混合后排第二
+lex1122b-jianshui	26	jianshui	减税	1	lexicon-1122	2026-11-22	原 3027，聊天混合后排第二
+lex1122b-chouqian	26	chouqian	抽签	1	lexicon-1122	2026-11-22	原 3374，聊天混合后排第二
+lex1122b-jieqing	26	jieqing	结清	1	lexicon-1122	2026-11-22	原 2672，聊天混合后排第二
+lex1122b-xieshang	26	xieshang	协商	1	lexicon-1122	2026-11-22	原 28827，聊天混合后排第二
+lex1122b-neg-youhui	26	tayouhuilaide	他有回来的	1	反例	2026-11-22	11-23 记录现状，不算门槛：原期望 他又会来的（优惠 提到第一后整句不能变），现首选 他有回来的
+lex1122b-neg-buwei	26	buweisuodong	不为所动	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-fahuo	26	tafahuole	他发火了	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-zhekou	26	yanbuxiazhekouqi	咽不下这口气	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-fudu	26	woxiangfudu	我想复读	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-zhuxiao	26	tazaizhuxiao	他在住校	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-quantao	26	zhongletadequantao	中了他的圈套	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-yuanma	26	lizheliyuanma	离这里远吗	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-xianxue	26	woxianxuezhege	我先学这个	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-shangyue	26	zhongqiujieshangyue	中秋节赏月	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-xieshang	26	xieshangmingzi	写上名字	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-zhifu	26	chuanzhezhifu	穿着制服	1	反例	2026-11-22	第二批提权后整句不能变
+lex1122b-neg-zhongjie	26	zhongjiezhezhanzheng	终结者战争	1	反例	2026-11-22	11-23 记录现状，不算门槛：原期望 终结这场战争（第二批提权后整句不能变），现首选 终结者战争
+lex1122b-neg-daozhang	26	zhangdaozhang	张道长	1	反例	2026-11-22	第二批提权后整句不能变
+user-aizibing-9	9	24942464	艾滋病	1	user	2026-11-23	九键 ai'zi'bing 曾在第三个出 逼一逼你（ext 词组碎片）
+user-aizibing-9-nofrag	9	24942464	!逼一逼你	1	user	2026-11-23	同上
+frag-biyibini-26	26	biyibini	!逼一逼你	1	反例	2026-11-23	0004 删掉的碎片，26 键首选不应再是它；比一比你 更通顺
+frag-bixianggang-26	26	bixianggang	比香港	3	反例	2026-11-23	删掉整词后仍要能拼出来

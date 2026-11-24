@@ -1058,6 +1058,8 @@ fun KeyboardLayout(
                                         onRelease = onRelease,
                                         onLongPressSelect = onLongPressSelect,
                                         longPressItems = longPressLabels,
+                                        longPressCenterItems = letterMenuCenterItems(key, longPressLabels, isShifted,
+                                            KeysConfigHelper.longPressLetters(isAsciiMode)),
                                         shadowEnabled = shadowEnabled,
                                         shadowElevation = shadowElevation,
                                         shadowShapeRadius = shadowShapeRadius,
@@ -1817,6 +1819,8 @@ fun KeyboardRowWithConfig(
                 onRelease = onRelease,
                 onLongPressSelect = onLongPressSelect,
                 longPressItems = longPressLabels,
+                longPressCenterItems = letterMenuCenterItems(key, longPressLabels, isShifted,
+                    KeysConfigHelper.longPressLetters(isAsciiMode)),
                 fontSize = config.fontSize,
                 swipeFontSize = config.swipeFontSize,
                 shadowEnabled = config.shadowEnabled,
@@ -1867,9 +1871,13 @@ internal fun ShiftCapsKeyButton(
     val currentSplitRedundant by rememberUpdatedState(splitRedundant)
     val suppressCursorMove = LocalSuppressCursorMove.current
     val currentPress by rememberUpdatedState(onKeyPressDown)
+    // 松手给「按键抬起震动」，和字母键一样（用户 11-23）。
+    val currentRelease by rememberUpdatedState(keyReleaseOrShared(null, onKeyPressDown != null))
     val currentKey by rememberUpdatedState(onKeyPress)
     val currentTapKey by rememberUpdatedState(tapKey)
     val currentGapLight by rememberUpdatedState(LocalKeyGapLight.current)
+    // 「点一下 Shift 锁定大写」（默认关）：开着时点按直接锁定/解锁，见 [shiftTapAction]。
+    val currentTapLocks by rememberUpdatedState(LocalKeyboardInputPreferences.current.shiftTapLocks)
     var bounds by remember { mutableStateOf(Rect.Zero) }
 
     val frostedGlass = LocalKeyboardInputPreferences.current.frostedGlass
@@ -1974,6 +1982,7 @@ internal fun ShiftCapsKeyButton(
                         targets?.finish()
                         isPressed = false
                         suppressCursorMove.value = false
+                        currentRelease?.invoke()
                         if (tapOutput != null) {
                             // 长音键：点按送 ー；按住没打别的键松手，照 Shift 点按切换（小写→单次大写→锁定→小写）。
                             // 计时没赶上（松手事件先到）时按事件时间判断，不把长按当成点按。
@@ -1992,12 +2001,11 @@ internal fun ShiftCapsKeyButton(
                             if (currentSplit?.invoke() == true) {
                                 currentKey(SYLLABLE_SEPARATOR)
                                 lastTap = Long.MIN_VALUE
-                            } else if (lastTap != Long.MIN_VALUE && down.uptimeMillis - lastTap in 0..viewConfiguration.doubleTapTimeoutMillis) {
-                                currentKey("shift_caps")
-                                lastTap = Long.MIN_VALUE
                             } else {
-                                currentKey("shift_single")
-                                lastTap = upTime
+                                val doubleTap = lastTap != Long.MIN_VALUE && down.uptimeMillis - lastTap in 0..viewConfiguration.doubleTapTimeoutMillis
+                                val action = shiftTapAction(currentTapLocks, doubleTap)
+                                currentKey(action)
+                                lastTap = if (action == "shift_single") upTime else Long.MIN_VALUE
                             }
                         } else lastTap = Long.MIN_VALUE
                     }
@@ -2061,6 +2069,7 @@ fun SwipeableKeyButtonLandscape(
     onRelease: (() -> Unit)? = null,
     onLongPressSelect: ((String) -> Unit)? = null,
     longPressItems: List<String>? = null,
+    longPressCenterItems: List<String> = emptyList(),
     fontSize: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
     swipeFontSize: androidx.compose.ui.unit.TextUnit = 10.sp,
     onSwipeStateChange: ((SwipeState, Rect) -> Unit)? = null,
@@ -2075,7 +2084,7 @@ fun SwipeableKeyButtonLandscape(
         symbolInputText = symbolInputText, symbolInputDownText = symbolInputDownText,
         swipeUpKeyLabel = swipeUpKeyLabel, swipeDownKeyLabel = swipeDownKeyLabel,
         onSwipe = onSwipe, onSwipeDown = onSwipeDown, onPress = onPress, onRelease = onRelease,
-        onLongPressSelect = onLongPressSelect, longPressItems = longPressItems,
+        onLongPressSelect = onLongPressSelect, longPressItems = longPressItems, longPressCenterItems = longPressCenterItems,
         fontSize = if (fontSize == TextUnit.Unspecified) 14.sp else fontSize, swipeFontSize = swipeFontSize,
         onSwipeStateChange = onSwipeStateChange, shadowEnabled = shadowEnabled,
         shadowElevation = shadowElevation, shadowShapeRadius = shadowShapeRadius)
@@ -2200,6 +2209,8 @@ fun CompactKeyboardRowWithConfig(
                 onRelease = compactOnRelease,
                 onLongPressSelect = compactOnLongPressSelect,
                 longPressItems = longPressLabels,
+                longPressCenterItems = letterMenuCenterItems(key, longPressLabels, isShifted,
+                    KeysConfigHelper.longPressLetters(isAsciiMode)),
                 fontSize = config.fontSize,
                 swipeFontSize = config.swipeFontSize,
                 shadowEnabled = config.shadowEnabled,
@@ -2262,6 +2273,27 @@ internal fun commitLongPressChoice(label: String, onCommitText: ((String) -> Uni
         com.kingzcheung.xime.service.ExplicitLowercase.mark(label)
         onKeyPress(label)
     } else (onCommitText ?: onKeyPress)(label)
+}
+
+/**
+ * 键盘把按下的字母交给按键线程前套上 Shift：Shift 开着时长按气泡里特意选的小写（[explicitLowercase]）不再转成大写，
+ * 也不按 Shift 处理（按着 Shift 长按 K 选 k 上屏 k，11-23 平板复测）；其余照旧由 Shift 决定大小写。
+ */
+internal fun shiftedKeyPress(key: String, shift: com.kingzcheung.xime.viewmodel.ShiftMode, explicitLowercase: Boolean): Pair<String, Boolean> =
+    if (shift.isShifted && explicitLowercase && key.length == 1 && key[0] in 'a'..'z') key to false
+    else shift.applyToKey(key) to shift.isShifted
+
+/**
+ * 26 键中文、英文的单字母键长按气泡里排在手指下的项：点按得不到的那个大小写在先（平时点按是小写，长按松手就是大写；
+ * Shift 按着时反过来），另一个挨着。带声调、变音的字母往外排（群友 11-23）。气泡里没有这对大小写、
+ * 或是字母语言键盘（[accentLetters] 不空：西班牙、德、俄语等，长按要的是 ñ、ä 这类）时不排，照旧。
+ */
+internal fun letterMenuCenterItems(key: String, labels: List<String>?, isShifted: Boolean, accentLetters: String): List<String> {
+    if (labels == null || accentLetters.isNotEmpty() || key.length != 1 || key[0].lowercaseChar() !in 'a'..'z') return emptyList()
+    val upper = key.uppercase()
+    val lower = key.lowercase()
+    if (upper !in labels || lower !in labels) return emptyList()
+    return if (isShifted) listOf(lower, upper) else listOf(upper, lower)
 }
 
 /**

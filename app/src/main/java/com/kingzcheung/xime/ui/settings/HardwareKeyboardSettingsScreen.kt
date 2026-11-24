@@ -60,7 +60,7 @@ fun HardwareKeyboardSettingsContent(onBack: () -> Unit) {
                 options = HardwareKeyboardPreferences.read(context)
             }
             HardwareOption("候选跟随光标", "候选窗显示在光标旁边", options.followCursor) { save("follow_cursor", it) }
-            // 中文联想词只在「智能联想」开着时才有，但英文直接输入的补全也按这项放，与智能联想无关，所以不置灰（#526）。
+            // 联想词和英文直接输入的补全都只在「智能联想」开着时才有（11-23 起补全也归它管）；「英文出短语」、邮箱后缀照样按这项放，所以不置灰（#526）。
             HardwareOption("联想也显示在候选窗", "联想词和英文补全也显示在候选浮窗里",
                 options.associationInWindow) { save("association_in_window", it) }
             HardwareOption("自动避开输入区域", "浮窗不挡住正在输入的地方", options.avoidEditor) { save("avoid_editor", it) }

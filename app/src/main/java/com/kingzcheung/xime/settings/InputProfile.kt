@@ -64,11 +64,19 @@ sealed interface EngineProfile {
 data class InputCapabilities(
     /** 组字区里的编码可以挪光标改（拼音、双拼，以及英文单词方案的字母）。 */
     val editablePinyin: Boolean = false,
+    /**
+     * 笔画编码也能点编辑条挪光标、删改（11-22 他转来的笔画用户改动）。只管编码编辑，不碰拼音音节那些
+     * （左栏选音节、逗号键分词还是只认 [editablePinyin]）。
+     */
+    val editableStrokeCode: Boolean = false,
     /** 编码分大小写（英文单词方案打 Hello 出 Hello）：改编码时不能把字母转成小写。 */
     val caseSensitiveCode: Boolean = false,
     val kanaCase: Boolean = false,
     val japaneseConversion: Boolean = false,
-)
+) {
+    /** 组字区的编码能打开编辑条改：拼音系或笔画。 */
+    val editableCode: Boolean get() = editablePinyin || editableStrokeCode
+}
 
 data class InputProfile(
     val language: InputLanguage,
@@ -149,6 +157,7 @@ object InputProfiles {
 
     private fun capabilities(scheme: InputScheme) = InputCapabilities(
         editablePinyin = scheme == InputScheme.PINYIN || scheme == InputScheme.DOUBLE_PINYIN || scheme == InputScheme.WORDS,
+        editableStrokeCode = scheme == InputScheme.STROKE,
         caseSensitiveCode = scheme == InputScheme.WORDS,
         kanaCase = scheme == InputScheme.ROMAJI,
         japaneseConversion = scheme == InputScheme.ROMAJI || scheme == InputScheme.KANA,

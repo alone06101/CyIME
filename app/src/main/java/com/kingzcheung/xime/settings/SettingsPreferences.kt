@@ -71,6 +71,17 @@ object SettingsPreferences {
     }
 
     /**
+     * 选完符号自动返回：在符号页点一个符号后回到打字键盘；默认关 = 留在符号页接着点（原来的样子）。
+     * 只管符号页的符号格子；删除、分类、数字键照旧（群友 11-24：选完要点「中文」才回去）。
+     */
+    const val KEY_SYMBOL_RETURN_AFTER_PICK = "symbol_return_after_pick"
+    fun isSymbolReturnAfterPickEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_SYMBOL_RETURN_AFTER_PICK, false)
+    fun setSymbolReturnAfterPickEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_SYMBOL_RETURN_AFTER_PICK, enabled).apply()
+    }
+
+    /**
      * 回车发送：应用自己把回车设成发送时（微信「回车键发送消息」等），普通回车直接发送、键面写发送；
      * 默认关 = 回车换行、Ctrl+回车发送（用户 11-05）。见 EnterKeyAction。
      */
@@ -241,6 +252,18 @@ object SettingsPreferences {
 
     fun setNumberRowEnabled(context: Context, enabled: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_NUMBER_ROW, enabled).apply()
+    }
+
+    const val KEY_NUMBER_PAD_TOP_789 = "number_pad_top_789"
+
+    /**
+     * 「数字位置」：数字键盘最上面一排是 1 2 3（默认，和以前一样）还是 7 8 9（同电脑键盘右边的小键盘）。
+     * 新键（11-22，群里有人要），读不到就是 1 2 3 在上。管 123 页数字键盘和假名九键的数字页，见 numberPadRows。
+     */
+    fun isNumberPadTop789(context: Context): Boolean = getPrefs(context).getBoolean(KEY_NUMBER_PAD_TOP_789, false)
+
+    fun setNumberPadTop789(context: Context, top789: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_NUMBER_PAD_TOP_789, top789).apply()
     }
 
     const val KEY_SPLIT_GAP_PORTRAIT = "split_gap_fraction_portrait"
@@ -479,6 +502,8 @@ object SettingsPreferences {
     const val KEY_CANDIDATE_SWIPE_EXPAND = "candidate_swipe_expand"
     /** 开了「候选滑到头回弹展开」时，取消／关联想键放右边画成「×」（11-22 他：和收起键盘同一个位置）；默认左边。 */
     const val KEY_CANDIDATE_CLOSE_ON_RIGHT = "candidate_close_on_right"
+    /** 「候选栏右边的键」选「关闭」前「左右滑展开」开没开；选回「展开」时恢复成它（11-23 平板实测：切回后不该还开着）。 */
+    const val KEY_CANDIDATE_SWIPE_BEFORE_CLOSE = "candidate_swipe_expand_before_close"
     const val KEY_INPUT_TEXT_LOCATION = "input_text_location"
     const val KEY_SHOW_PREEDIT_PREVIEW = "show_preedit_preview"
     const val KEY_INLINE_PREEDIT_PREVIEW = "inline_preedit_preview"
@@ -634,6 +659,25 @@ object SettingsPreferences {
 
     fun setCandidateCloseOnRight(context: Context, right: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_CANDIDATE_CLOSE_ON_RIGHT, right).apply()
+    }
+
+    /**
+     * 设置「候选栏右边的键」：[closes] 为真是「关闭」（右边 × 先关候选、同一处再点收键盘），存成关闭键放右边 + 左右滑展开开着；
+     * 「关闭」只能靠滑展开，所以选它时把「左右滑展开」打开，并记下原来开没开，选回「展开」时恢复。
+     */
+    fun setCandidateRightKeyCloses(context: Context, closes: Boolean) {
+        val prefs = getPrefs(context)
+        val swipe = prefs.getBoolean(KEY_CANDIDATE_SWIPE_EXPAND, false)
+        val closing = swipe && prefs.getBoolean(KEY_CANDIDATE_CLOSE_ON_RIGHT, false)
+        val edit = prefs.edit().putBoolean(KEY_CANDIDATE_CLOSE_ON_RIGHT, closes)
+        if (closes) {
+            if (!closing) edit.putBoolean(KEY_CANDIDATE_SWIPE_BEFORE_CLOSE, swipe)
+            edit.putBoolean(KEY_CANDIDATE_SWIPE_EXPAND, true)
+        } else if (prefs.contains(KEY_CANDIDATE_SWIPE_BEFORE_CLOSE)) {
+            edit.putBoolean(KEY_CANDIDATE_SWIPE_EXPAND, prefs.getBoolean(KEY_CANDIDATE_SWIPE_BEFORE_CLOSE, swipe))
+                .remove(KEY_CANDIDATE_SWIPE_BEFORE_CLOSE)
+        }
+        edit.apply()
     }
 
     /**

@@ -284,19 +284,23 @@ private fun T9KeyboardSwipeOverlay(
                 val inputContext = runCatching { callbacks.captureInputContext() }.getOrNull() ?: return@t9GlideTyping
                 val dictionary = glideDictionary
                 val doublePinyin = glideDoublePinyin
+                // 这一笔之前组合里已有的数字，同一条线按它挑（他 11-23：先打 hua 再划 xing 永远出 zhong）。在主线程读。
+                val before = runCatching { callbacks.t9GlideComposition() }.getOrNull().orEmpty()
                 glideScope.launch {
                     // 很短又认不出：快打时手指一抖被当成了滑行，按点了起点那个键算，不吞这一下（用户 11-11）。
                     val glide = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                         runCatching {
-                            com.kingzcheung.xime.glide.GlideLexicon.t9Glide(glideContext, keys, xs, ys, dictionary, doublePinyin)
+                            com.kingzcheung.xime.glide.GlideLexicon.t9Glide(glideContext, keys, xs, ys, dictionary, doublePinyin,
+                                before = before)
                         }.getOrNull()
                     }
                     val digits = glide?.digits.orEmpty()
                         .ifEmpty { com.kingzcheung.xime.glide.shortGlideTapKey(keys, xs, ys)?.toString().orEmpty() }
                     if (digits.isEmpty()) return@launch
                     kotlinx.coroutines.withContext(inputContext) {
-                        // 同一笔的其他词（#214）：先登记，打入的数字串整笔出现时候选栏在首选之后给出。
-                        callbacks.onT9GlideAlternatives?.invoke(digits, glide?.alternatives.orEmpty().takeIf { glide?.digits == digits }.orEmpty())
+                        // 同一笔的其他词（#214）：先登记，打入后整个组合（前面已有的 + 这一笔）出现时候选栏在首选之后给出。
+                        callbacks.onT9GlideAlternatives?.invoke(before + digits,
+                            glide?.alternatives.orEmpty().takeIf { glide?.digits == digits }.orEmpty())
                         for (digit in digits) {
                             val key = digit.toString()
                             if (callbacks.onPreeditKeyInput?.invoke(key) != true) controller.onDigitPressed(key)
@@ -976,7 +980,7 @@ internal data class T9KeySwipes(
  * - 点按走 [onClick]，长按走 [onLongPressSelect]，上/下滑走 [onSwipeUp]/[onSwipeDown]。
  */
 @Composable
-private fun T9DigitKey(
+internal fun T9DigitKey(
     digit: String,
     letters: String,
     longPressItems: List<String>,
@@ -998,6 +1002,10 @@ private fun T9DigitKey(
     val currentOnClick by rememberUpdatedState(onClick)
     val shownItems = remember(longPressItems, uppercaseLetters) { t9LetterLabels(longPressItems, uppercaseLetters) }
     val itemValue = remember(longPressItems, shownItems) { { shown: String -> longPressItems.getOrNull(shownItems.indexOf(shown)) ?: shown } }
+    // 长按气泡里的字母一律小写：选了是进拼音（编码条里是小写 k、出 k 开头的词），不跟键帽大写。
+    // 26 键的长按气泡里大写是直接上屏大写字母，九键这里写大写 K 却出「看/快/开」，对不上（用户 11-23）。
+    val menuItems = remember(longPressItems) { t9LongPressMenuLetters(longPressItems) }
+    val menuValue = remember(longPressItems, menuItems) { { shown: String -> longPressItems.getOrNull(menuItems.indexOf(shown)) ?: shown } }
     val currentOnLongPressSelect by rememberUpdatedState(onLongPressSelect)
     val currentOnPress by rememberUpdatedState(onPress)
     val currentSwipes by rememberUpdatedState(swipes)
@@ -1018,8 +1026,9 @@ private fun T9DigitKey(
         },
         onPress = { currentOnPress?.invoke() },
         // 长按弹字母气泡和 26/14 键共用“长按弹出字母气泡”开关，默认关（用户 10-21）；拂动模式长按出数字，不受影响。
-        longPressItems = if (flick || inputPreferences.letterLongPressMenu) shownItems else emptyList(),
-        onLongPressSelect = { letter -> currentOnLongPressSelect?.invoke(itemValue(letter)) },
+        // 拂动模式下长按出的是数字，这里的列表用不上；只有「长按弹出字母气泡」走这份小写列表。
+        longPressItems = if (flick) shownItems else if (inputPreferences.letterLongPressMenu) menuItems else emptyList(),
+        onLongPressSelect = { letter -> currentOnLongPressSelect?.invoke(if (flick) itemValue(letter) else menuValue(letter)) },
         // Four-letter keys: P/S on the left/right, Q/R up/down (user layout, 2026-10-18); three letters go left/up/right.
         flickLetters = if (!flick) null else if (shownItems.size == 4)
             listOf(shownItems[0], shownItems[1], shownItems[3], shownItems[2]) else shownItems,
@@ -1051,6 +1060,9 @@ internal fun t9LetterLabel(letters: String, uppercase: Boolean): String =
 
 internal fun t9LetterLabels(items: List<String>, uppercase: Boolean): List<String> = items.map { t9LetterLabel(it, uppercase) }
 
+/** 九键长按气泡里的字母：一律小写，写的就是进拼音的那个字母；送出的仍是原值。 */
+internal fun t9LongPressMenuLetters(items: List<String>): List<String> = t9LetterLabels(items, uppercase = false)
+
 // ─── 子组件 ───────────────────────────────────────────────────────────
 
 @Composable
@@ -1073,6 +1085,8 @@ internal fun T9CandidateItem(
     var isPressed by remember { mutableStateOf(false) }
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnPress by rememberUpdatedState(onPress)
+    // 和字母键一样松手也给「按键抬起震动」（用户 11-23：九键抬起震动无效）。
+    val currentOnRelease by rememberUpdatedState(keyReleaseOrShared(null, onPress != null))
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -1086,6 +1100,7 @@ internal fun T9CandidateItem(
                     currentOnPress?.invoke()
                     tryAwaitRelease()
                     isPressed = false
+                    currentOnRelease?.invoke()
                 }, onTap = { currentOnClick() })
             },
         contentAlignment = Alignment.Center
@@ -1244,6 +1259,8 @@ internal fun ResetKey(
     var isPressed by remember { mutableStateOf(false) }
     val currentOnClick by rememberUpdatedState(onClick)
     val currentOnPress by rememberUpdatedState(onPress)
+    // 和字母键一样松手也给「按键抬起震动」（用户 11-23：九键抬起震动无效）。
+    val currentOnRelease by rememberUpdatedState(keyReleaseOrShared(null, onPress != null))
     val density = LocalDensity.current
     val shape = RoundedCornerShape(KeyShapes.current.radius(shadowShapeRadius))
     val frostedGlass = LocalKeyboardInputPreferences.current.frostedGlass
@@ -1272,6 +1289,7 @@ internal fun ResetKey(
                     currentOnPress?.invoke()
                     tryAwaitRelease()
                     isPressed = false
+                    currentOnRelease?.invoke()
                 }, onTap = { currentOnClick() })
             }
             .padding(scaledKeyVisualPadding())

@@ -128,10 +128,8 @@ class CandidateBarFeedbackTest {
     private fun count(description: String) =
         rule.onAllNodesWithContentDescription(description, useUnmergedTree = true).fetchSemanticsNodes().size
 
-    @Test fun optionalHighlightShowsWhileHoldingEitherEdgeAndClearsOnCancel() {
-        val prefs = SettingsPreferences.getPrefsPublic(context)
-        assertFalse(prefs.getBoolean(SettingsPreferences.KEY_CANDIDATE_PRESS_HIGHLIGHT, false))
-        prefs.edit().putBoolean(SettingsPreferences.KEY_CANDIDATE_PRESS_HIGHLIGHT, true).commit()
+    /** 「候选栏按钮按压高亮」开关去掉了（11-24）：不用开什么，按住两端按钮照样亮，松开或取消就回原样。 */
+    @Test fun highlightShowsWhileHoldingEitherEdgeAndClearsOnCancel() {
         SettingsPreferences.setAssociationCancelCross(context, true)
         var clicks = 0
         rule.setContent { Bar(association, onCancel = { clicks++ }) }

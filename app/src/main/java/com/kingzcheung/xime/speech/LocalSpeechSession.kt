@@ -101,7 +101,9 @@ internal class LocalSpeechSession(
         else engine.decodeTimeoutMs
     private fun worker(name: String, capacity: Int) = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
         ArrayBlockingQueue(capacity), { task -> Thread(task, name).apply { isDaemon = true } })
-    private val audio = worker("CyIME-Speech", 100) // 10 s of 100 ms PCM, bounded on low-end CPUs
+    // 60 s of 100 ms PCM (about 1.9 MB): a slow phone may fall behind while a model loads or the previous input is
+    // re-read; 10 s used to stop the recording with an error.
+    private val audio = worker("CyIME-Speech", 600)
     private val refinement = worker("CyIME-Refinement", 2)
     private val lifecycle = Any()
     private val outputLock = Any()
@@ -123,8 +125,10 @@ internal class LocalSpeechSession(
     private var sessionSamples = 0
     private var sessionOverflow = false
     private val sessionPauses = mutableListOf<Int>()
-    /** VAD 至少打开过一段。一段都没有就是没说话：整段重识别不跑，SenseVoice 在近乎静音上会编出「我。」。 */
+    /** VAD 至少打开过一段。一段都没有时多半没说话：SenseVoice 在近乎静音上会编出「我。」。 */
     @Volatile private var heardSpeech = false
+    /** VAD 没开段时的后备：整次输入够响才整段重识别（[SpeechLift]，平板上的短句 VAD 会漏）。 */
+    private val lift = SpeechLift()
     // The re-read runs on the finishing thread after both workers stop: a successor must wait for
     // it (awaitIdle) before resetting or reusing the engine. Released by finish or cancel.
     private val wholeLock = Any()
@@ -191,7 +195,7 @@ internal class LocalSpeechSession(
                     if (!abandoned.get() && !failed.get()) try {
                         if (wholeSentenceActive && !sessionOverflow) {
                             if (sessionSamples + samples.size > WHOLE_SESSION_MAX_SAMPLES) { sessionOverflow = true; sessionAudio.clear() }
-                            else { sessionAudio.add(samples); sessionSamples += samples.size }
+                            else { sessionAudio.add(samples); sessionSamples += samples.size; lift.accept(samples) }
                         }
                         segmenter.accept(samples)
                         previewLatestAudio()
@@ -276,7 +280,9 @@ internal class LocalSpeechSession(
     private fun wholeSessionText(deadline: Long): String? = synchronized(wholeLock) {
         val startedAt = System.nanoTime()
         fun skip(reason: String): String? { wholeOutcome = "$reason after ${(System.nanoTime() - startedAt) / 1_000_000} ms"; return null }
-        if (abandoned.get() || sessionOverflow || sessionSamples == 0 || !heardSpeech)
+        // VAD 一段都没开：整次够响（像说了一句短话）才整段重识别，否则当作没说话。
+        val loudWithoutVad = !heardSpeech && lift.liftDb() >= SPEECH_LIFT_DB
+        if (abandoned.get() || sessionOverflow || sessionSamples == 0 || !heardSpeech && !loudWithoutVad)
             return skip(if (sessionOverflow) "overflow" else if (!heardSpeech) "no-speech" else "nothing")
         val pcm = FloatArray(sessionSamples)
         var offset = 0
@@ -297,6 +303,8 @@ internal class LocalSpeechSession(
         // 整段重识别的字数不到已显示的一半（噪音里常见）：保留按停顿定稿和预览的文字。
         if (secondPassLostText(shown, merged)) return skip("lost-text")
         if (merged.isEmpty()) return skip("empty")
+        // VAD 没听到、只靠响度放行时，只认出一个字（敲桌、咳嗽上编出的「我。」）不算数。
+        if (loudWithoutVad && spokenUnits(merged) < 2) return skip("no-speech-short")
         wholeOutcome = "used in ${(System.nanoTime() - startedAt) / 1_000_000} ms"
         return merged
     }

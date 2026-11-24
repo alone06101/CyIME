@@ -104,7 +104,7 @@ object InputProfileSelection {
      * 第二行是点了会怎样；卡片矮时只显示第一行。
      */
     fun unavailableNote(current: SchemaInfo, target: SchemaInfo): String =
-        "不能用${current.schemeLabel}\n点了换成${target.schemeLabel}"
+        "不能用${current.schemeLabel}\n点击切换${target.schemeLabel}"
 
     /** 布局一行里每张灰卡片的原因，键是布局 ID。 */
     fun unavailableNotes(current: SchemaInfo, switches: Map<String, LayoutSwitch?>): Map<String, String> =

@@ -1188,6 +1188,23 @@ class RimeEngine {
         }
     }
 
+    /**
+     * 只启停了方案时的快路（[RimeConfigHelper.ensureDeployment] 判定其他部署输入都没变）：不进维护状态，
+     * 只重编方案列表和 [added] 这几个新开的方案，不再把每个方案的词典都读一遍（11-23 平板：慢路 19–21 秒）。
+     * 和 [deployIncremental] 一样持锁、先关会话后重开；返回 false 时调用方走原来的维护部署。
+     */
+    fun deploySchemaListChange(added: List<String>): Boolean {
+        if (!isInitialized) return false
+        mutateLocked {
+            ensureT9SchemaPatchesForDeployedSchemas(userDataDir)
+            try {
+                val done = nativeDeploySchemaListChange(added.toTypedArray())
+                if (done) nativeUpdateLastBuildTime()
+                return done
+            } finally { sessionReplaced() }
+        }
+    }
+
     /** Read only the active translator's codes, keeping pronunciation dictionaries out of shape-code hints. */
     internal fun currentSchemeCodes(schema: String, candidates: List<String>): List<String> {
         if (!isInitialized) return emptyList()
@@ -1497,6 +1514,7 @@ class RimeEngine {
     private external fun nativeJoinMaintenance()
     private external fun nativeDeploy(): Boolean
     private external fun nativeDeploySchema(schemaId: String): Boolean
+    private external fun nativeDeploySchemaListChange(added: Array<String>): Boolean
     private external fun nativeLookupText(text: String, primaryOnly: Boolean): String
     private external fun nativeOpenccConvert(configPath: String, text: String): String
     private external fun nativeGetAvailableSchemas(): Array<String>?
@@ -1774,7 +1792,59 @@ class RimeEngine {
     internal fun firstSentenceWords(shown: String): List<String>? = tryLocked(null) {
         if (!isInitialized || !nativeHasSession() || nativeIsMaintaining() || nativeIsAsciiMode()) return@tryLocked null
         val row = nativeInspectCandidates(SENTENCE_ROW_SEARCH).firstOrNull { it.getOrNull(0) == shown } ?: return@tryLocked null
-        splitSentenceWords(shown, row.getOrNull(9).orEmpty())
+        splitSentenceWords(shown, row.getOrNull(9).orEmpty()) ?: strokeRowChars(shown, row)
+    }
+
+    private fun isStrokeSchema(): Boolean = com.kingzcheung.xime.settings.InputProfiles
+        .describe(nativeGetCurrentSchema().orEmpty()).scheme == com.kingzcheung.xime.settings.InputScheme.STROKE
+
+    /** 候选盖住的那段编码（候选行的起止位置）；对不上时为 null。须在锁内调用。 */
+    private fun candidateRowCode(row: Array<String>): String? {
+        val input = nativeGetInput().orEmpty()
+        val start = row.getOrNull(5)?.toIntOrNull() ?: return null
+        val end = row.getOrNull(6)?.toIntOrNull() ?: return null
+        return if (start in 0..end && end <= input.length) input.substring(start, end) else null
+    }
+
+    /** 笔画方案：分词打出的词按分词段拆成字（[strokeSegmentChars]）；别的方案为 null。须在锁内调用。 */
+    private fun strokeRowChars(shown: String, row: Array<String>): List<String>? =
+        if (!isStrokeSchema()) null else candidateRowCode(row)?.let { strokeSegmentChars(shown, it) }
+
+    /**
+     * 笔画：长按首选、点了第 [target] 个字（11-23）。前面的字照原样选定：先找正好盖住前几段的词，没有就一个字一个字选
+     * （分词打词给第一段的单字，盖住这段和后面的分词号）；再把光标放到这个字的笔画后面、分词号前面，候选就只剩这段笔画的字。
+     * 选好后引擎跳过分词号，光标回到末尾，后面几段照常出词（librime 实测：sz'szh'hh 重选第二个字，选好后剩 hh 一段）。
+     * 中途哪个字找不到就停在那里（只是选定了前几个字，没有上屏）。须在锁内调用。
+     */
+    private fun reselectStrokeChar(words: List<String>, target: Int, sentence: String): Boolean {
+        val row = nativeInspectCandidates(SENTENCE_ROW_SEARCH).firstOrNull { it.getOrNull(0) == sentence } ?: return false
+        val start = row.getOrNull(5)?.toIntOrNull() ?: return false
+        val code = candidateRowCode(row) ?: return false
+        if (strokeSegmentChars(sentence, code) != words) return false
+        candidateRevision.incrementAndGet()
+        reselectCaret = -1
+        // 第 k 个字连同后面的分词号在整个编码里的结束位置。
+        fun endAfter(k: Int) = start + strokeSegmentEnd(code, k) + 1
+        fun candidateIndex(text: String, end: Int): Int? = nativeInspectCandidates(SENTENCE_WORD_SEARCH).firstOrNull {
+            it.getOrNull(0) == text && it.getOrNull(6)?.toIntOrNull() == end }?.getOrNull(4)?.toIntOrNull()
+        if (target > 0) {
+            val whole = candidateIndex(words.take(target).joinToString(""), endAfter(target - 1))
+            if (whole != null) {
+                if (!nativeSelectCandidateByGlobalIndex(whole)) return true
+            } else for (k in 0 until target) {
+                val index = candidateIndex(words[k], endAfter(k)) ?: return true
+                if (!nativeSelectCandidateByGlobalIndex(index)) return true
+            }
+        }
+        val inputEnd = nativeGetInput().orEmpty().length
+        val caret = start + strokeSegmentEnd(code, target)
+        // 最后一个字：前面选定后剩下的就是这一段，候选已经只有这段的字。
+        if (caret <= 0 || caret >= inputEnd) return true
+        // 光标位置按分词段算出来的，一定对得上这个字；不再要求这个字在前 200 个候选里（一两笔的段字太多）。
+        nativeSetCaret(caret)
+        reselectCaret = caret
+        reselectInput = nativeGetInput().orEmpty()
+        return true
     }
 
     /** 当前候选里第一个文字是 [text] 的：全局序号、注释、在编码里的结束位置。须在锁内调用。 */
@@ -1804,6 +1874,7 @@ class RimeEngine {
             if (nativePinyinEditSnapshot().getOrNull(1)?.toIntOrNull() != input.length) return@editPinyinAndReadState false
             val sentence = words.joinToString("")
             if (nativeInspectCandidates(SENTENCE_ROW_SEARCH).none { it.getOrNull(0) == sentence }) return@editPinyinAndReadState false
+            if (isStrokeSchema()) return@editPinyinAndReadState reselectStrokeChar(words, target, sentence)
             candidateRevision.incrementAndGet()
             reselectCaret = -1
             for (i in 0 until target) {

@@ -194,6 +194,7 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         SettingsSearchEntry("按键符号", layouts, layoutIndex, "角标 符号编辑 字母键符号 上下角标 下滑符号 14键符号 自定义布局符号 侧栏 笔画 短语 常用符号栏 手写符号 数字行 数字侧栏 数字键盘 滑动动作 zxcv 撤销 剪切 复制 粘贴 全选 段首 段尾"),
         SettingsSearchEntry("标点上屏首选", layouts, layoutIndex, "标点 逗号 句号 问号 首选 第一个候选 上屏 候选上屏 打逗号 选词 搜狗"),
         SettingsSearchEntry("输入成对符号", layouts, layoutIndex, "成对 配对 括号 引号 书名号 自动补全 闭合 光标中间"),
+        SettingsSearchEntry("选完符号自动返回", layouts, layoutIndex, "符号页 符号面板 自动返回 回到打字 回到键盘 选完 点完 退出符号 锁定符号"),
         SettingsSearchEntry("回车发送", layouts, layoutIndex, "回车 发送 换行 enter 回车键发送消息 微信 QQ 直接发送 Ctrl+回车"),
         SettingsSearchEntry("分体键盘", layouts, layoutIndex, "分体 分离 拆分 平板 两手 双手 间距"),
         SettingsSearchEntry("右半边也放 G 键", layouts, layoutIndex, "分体 右边 右手 G键 g 重复 两个G 双G 中排 对齐"),
@@ -204,6 +205,7 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         SettingsSearchEntry("数字出短语", layouts, layoutIndex, "数字 短语 我的短语 自定义短语 邮箱 网址 号码 数字串 数字键盘 候选"),
         SettingsSearchEntry("英文出短语", layouts, layoutIndex, "英文 字母 短语 我的短语 自定义短语 编码 英文状态 候选"),
         SettingsSearchEntry("联想常用数字", layouts, layoutIndex, "数字 常用数字 号码 电话 联想 学习 数字键盘 候选"),
+        SettingsSearchEntry("数字位置", layouts, layoutIndex, "数字键盘 数字位置 数字顺序 789 123 789在上 123在上 电脑 笔记本 小键盘 计算器 倒过来 上下颠倒 反过来 拨号"),
         SettingsSearchEntry("数字键盘左栏符号", layouts, layoutIndex, "数字键盘 左栏 侧栏 符号 运算符 加减乘除 + - * / 冒号 自定义 顺序 上下滑 数字侧栏"),
         SettingsSearchEntry("数字行", layouts, layoutIndex, "数字行 数字栏 一排数字 顶部数字 第五行 平板 1234567890 数字顺序 数字位置 自定义数字"),
         page("键盘尺寸与位置", layouts, SettingsRoutes.KeyboardResize, "尺寸 大小 高度 宽度 调整尺寸 键盘调节 悬浮 浮动 分体 透明度 底部留白 单手 单手模式 位置 旋转"),
@@ -235,6 +237,7 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         SettingsSearchEntry("空格右侧句号键", qwertyPath, qwerty, "句号 空格 标点"),
         SettingsSearchEntry("逗号键分词", qwertyPath, qwerty, "分词 分词键 隔音符 分隔符 单引号 撇号 音节 西安 xian 逗号 英文 缩写 what's"),
         SettingsSearchEntry("Shift 键分词", qwertyPath, qwerty, "分词 分词键 隔音符 分隔符 Shift 大小写 大写键 音节 西安 xian 撇号 单引号 英文 缩写 what's"),
+        SettingsSearchEntry("点一下 Shift 锁定大写", qwertyPath, qwerty, "Shift 大写锁定 锁定大写 一直大写 全大写 大写键 Caps Lock 大小写 单次大写 连点两下"),
         SettingsSearchEntry("长音键", qwertyPath, qwerty, "长音 ー 伸ばし棒 日语 日文 罗马字 L 键 Shift 大写键 コーヒー"),
         SettingsSearchEntry("拖到候选选词的距离", ninePath, nine, "九键 0键 零键 拖动 拖拽 托转 选词 候选 距离 阈值 Shift 百分比 拖线"),
         SettingsSearchEntry("拂动选字母", ninePath, nine, "九键 拂动 滑动 长按 数字 字母 字母菜单 上下左右"),
@@ -310,9 +313,11 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         // 11-09 反馈：有人按「取消候选按钮」「关闭候选按钮」找，记不住「候选栏」在前。
         SettingsSearchEntry("候选栏取消按钮", candidates, candidatePage, "取消 左箭头 取消输入 取消候选 关闭候选 取消候选按钮 关闭候选按钮 候选时取消按钮 关闭按钮 返回按钮 返回键 退出输入 取消联想 关闭联想"),
         SettingsSearchEntry("联想关闭键用叉号", candidates, candidatePage, "联想 关闭联想 取消联想 关闭键 关闭按钮 叉 叉号 圆叉 左箭头"),
-        SettingsSearchEntry("候选栏按钮按压高亮", candidates, candidatePage, "按住 反馈 取消键 关闭 展开箭头"),
-        SettingsSearchEntry("候选滑到头回弹展开", candidates, candidatePage, "候选 滑动展开 左滑 右滑 拉 回弹 弹回 展开候选 收起候选 收回候选 手势展开"),
-        SettingsSearchEntry("关闭键位置", candidates, candidatePage, "关闭键 取消 叉 叉号 右边 左边 收起键盘 全面屏手势 关闭联想"),
+        // 11-24 他定名：两张卡「默认」「经典」（没有小标题），开关「左右滑展开候选」；以前的名字留作关键词。
+        // 「经典」这一条也是「左右滑展开候选」锁定说明里「经典」的跳转目标。
+        SettingsSearchEntry("经典", candidates, candidatePage, "候选栏右边的键 默认 右边 展开 关闭 关闭键 关闭键位置 叉 叉号 箭头 展开箭头 收起键盘 全面屏手势 关闭联想 右边一处关",
+            anchor = "候选栏右边的键"),
+        SettingsSearchEntry("左右滑展开候选", candidates, candidatePage, "候选 滑动展开 左滑 右滑 拉 回弹 弹回 滑到头 候选滑到头回弹展开 展开候选 收起候选 收回候选 手势展开"),
         SettingsSearchEntry("候选注释", candidates, candidatePage, "注释 显示 自动 隐藏 候选显示"),
         SettingsSearchEntry("候选注释内容", candidates, candidatePage, "注释 拼音 释义 翻译 编码 中英 英文意思 词典 英文 单词 英文单词 选英文 出英文 上屏英文 打英文 中译英 下一项 长按下一项 shift"),
         // 九键的「下一项」键：搜「下一项」时排在上面「候选注释内容」后面（同分按先后）

@@ -2228,6 +2228,10 @@ settings-fold:语言键切换方式	=
 尺寸与位置	Size & position
 底部留白校准	Bottom margin calibration
 数字框自动数字键盘	Number pad for number fields
+数字位置	Number positions
+数字键盘最上面一排是 1 2 3 还是 7 8 9	Whether the top row of the number pad is 1 2 3 or 7 8 9
+1 2 3 在上	1 2 3 on top
+7 8 9 在上	7 8 9 on top
 左栏符号	Left column symbols
 数字行	Number row
 英文出短语	Phrases in English
@@ -2259,7 +2263,7 @@ settings-fold:语言键切换方式	=
 方块	Block
 和小标签一样贴着键盘，但更高、字更大，四角是直角。输入框往上让开，不会被挡住。	Like the small tab but taller, with larger text and square corners. The text field moves up so it is not covered.
 整行	Full row
-拼音占满键盘上面一整行。输入框往上让开，不会被挡住。	Pinyin fills a whole row above the keyboard. The text field moves up so it is not covered.
+键盘加高一行放拼音，和键盘连成一块。	The keyboard grows one row for the pinyin, as part of the keyboard.
 拼音靠哪边	Pinyin alignment
 靠左	Left
 居中	Center

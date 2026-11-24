@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -105,6 +106,43 @@ class T9KeyLabelCaseTest {
             verify(controller).onLetterFlicked(expected)
             rule.runOnIdle { assertEquals(listOf(expected), keys.toList()) }
         }
+    }
+
+    /**
+     * 用户 11-23：键帽大写 JKL 时长按弹出 J K L，选 K 进的却是拼音 k（出「看/快/开」）。
+     * 长按气泡一律写小写 j k l；送出的仍是原值，进拼音的结果不变。
+     */
+    @Test fun longPressMenuShowsLowercaseEvenWithUppercaseFaces() {
+        // 气泡是画在画布上的（SwipeBubble 用 drawText），语义树里找不到字：直接看按键交给气泡的那份列表（同 NumberRowLongPressTest）。
+        val menus = mutableListOf<List<String>>()
+        val picked = mutableListOf<String>()
+        AppFonts.initialize(rule.activity.application)
+        val prefs = KeyLabelCaseChoice.UPPER.applyTo(KeyboardInputPreferences(letterLongPressMenu = true))
+        rule.setContent {
+            CompositionLocalProvider(LocalKeyboardInputPreferences provides prefs) {
+                MaterialTheme {
+                    Box(Modifier.requiredSize(120.dp, 60.dp)) {
+                        T9DigitKey(digit = "5", letters = "JKL", longPressItems = listOf("J", "K", "L"),
+                            onClick = {}, onLongPressSelect = { picked += it },
+                            onSwipeStateChange = { state, _ -> if (state.isLongPress) menus += state.longPressItems },
+                            backgroundColor = Color.DarkGray, textColor = Color.White,
+                            modifier = Modifier.requiredSize(120.dp, 60.dp), uppercaseLetters = true)
+                    }
+                }
+            }
+        }
+        rule.waitForIdle()
+        assertTrue("键帽仍是大写 JKL", shown("JKL"))
+        rule.onNodeWithText("JKL", useUnmergedTree = true).performTouchInput { longClick(durationMillis = 900L) }
+        rule.waitForIdle()
+        assertTrue("弹出了气泡：$menus", menus.isNotEmpty())
+        assertTrue("气泡里是小写 j k l：$menus", menus.all { it == listOf("j", "k", "l") })
+        rule.runOnIdle { assertTrue("长按选中后送出原值：$picked", picked.single() in setOf("J", "K", "L")) }
+    }
+
+    @Test fun longPressMenuHelperIsAlwaysLowercase() {
+        assertEquals(listOf("p", "q", "r", "s"), t9LongPressMenuLetters(listOf("P", "Q", "R", "S")))
+        assertEquals(listOf("a", "b", "c"), t9LongPressMenuLetters(listOf("a", "b", "c")))
     }
 
     @Test fun labelHelperOnlyTouchesLetters() {

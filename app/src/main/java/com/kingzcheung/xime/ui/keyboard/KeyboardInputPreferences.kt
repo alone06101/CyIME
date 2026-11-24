@@ -118,6 +118,8 @@ data class KeyboardInputPreferences(
     val evenMergedKeys: Boolean = false,
     /** 数字行：26 键、14 键字母上方加一排数字（默认关，键和顺序见 [numberRowKeys]）。 */
     val numberRow: Boolean = false,
+    /** 数字键盘 7 8 9 在上（默认 1 2 3 在上），见 [numberPadRows]、[SettingsPreferences.isNumberPadTop789]。 */
+    val numberPadTop789: Boolean = false,
     /** 分体中缝比例（竖屏/横屏），null 为自动。 */
     val splitGapPortrait: Float? = null,
     val splitGapLandscape: Float? = null,
@@ -135,6 +137,11 @@ data class KeyboardInputPreferences(
     val syllableSplitKey: Boolean = false,
     /** Shift 键分词（默认关）：打拼音时点 Shift 插入 '，键面写「分词」；没在打拼音时照旧大小写。 */
     val shiftSyllableSplit: Boolean = false,
+    /**
+     * 点一下 Shift 就锁定大写（默认关，用户 11-23 转群友要的）：开着时点一下一直大写，再点一下回小写。
+     * 关着照旧：点一下只大写下一个字母，连点两下才锁定。按住、拖到字母上、打拼音时的分词都不变。
+     */
+    val shiftTapLocks: Boolean = false,
     /** 日语 26 键长音 ー 放在哪：默认 L 键就是长音；可改成 L 右侧单独键或代替 Shift，见 [JapaneseLongVowelKey]。 */
     val japaneseLongVowelKey: JapaneseLongVowelKey = JapaneseLongVowelKey.L_KEY,
     /** 各固定栏按位置保存的符号（每行一个位置）；未设置的沿用旧的共用列表。 */
@@ -309,6 +316,8 @@ data class KeyboardInputPreferences(
     companion object {
         /** 中英混输开关；输入法每次按字母键读它（ImeKeyRouter），改了下一键就生效。 */
         const val MIXED_INPUT_KEY = "mixed_input"
+        /** 点一下 Shift 就锁定大写（[shiftTapLocks]），默认关。 */
+        const val SHIFT_TAP_LOCKS_KEY = "shift_tap_locks"
         /** 生僻字开关；同繁体输出，输入法按字母、数字键前读它（ImeKeyRouter）。 */
         const val RARE_CHARACTERS_KEY = "rare_characters"
         /** 日文汉字、韩文汉字、粤语字开关；同生僻字，按键前读。 */
@@ -397,10 +406,10 @@ data class KeyboardInputPreferences(
                 SettingsPreferences.KEY_SHOW_PREEDIT_PREVIEW, SettingsPreferences.KEY_CANDIDATE_SWIPE_EXPAND, SettingsPreferences.KEY_INLINE_PREEDIT_PREVIEW, SettingsPreferences.KEY_PREEDIT_STYLE, SettingsPreferences.KEY_PREEDIT_ALIGN, SettingsPreferences.KEY_INPUT_TEXT_LOCATION,
                 SettingsPreferences.KEY_PREEDIT_BUBBLE_OPACITY, SettingsPreferences.KEY_PREEDIT_TONES,
                 com.kingzcheung.xime.settings.LetterSwipeBindings.CHINESE, com.kingzcheung.xime.settings.LetterSwipeBindings.ENGLISH,
-                SettingsPreferences.KEY_SPLIT_KEYBOARD, SettingsPreferences.KEY_SPLIT_RIGHT_G, SettingsPreferences.KEY_FILL_KEYBOARD_BLANK, SettingsPreferences.KEY_WIDE_KEYS, SettingsPreferences.KEY_EVEN_MERGED_KEYS, SettingsPreferences.KEY_NUMBER_ROW, SettingsPreferences.KEY_SPLIT_GAP_PORTRAIT, SettingsPreferences.KEY_SPLIT_GAP_LANDSCAPE, CHINESE_GLIDE_KEY, DELETE_CHINESE_GLIDE_CHARACTER_KEY, com.kingzcheung.xime.glide.ExternalGlideEncodings.KEY, GLIDE_PREVIEW_KEY, ENGLISH_AUTO_SPACE_KEY, ENGLISH_PUNCTUATION_SPACE_KEY, EMAIL_SUFFIXES_KEY, ADDRESS_FIELDS_ENGLISH_KEY, SYMBOL_NAMES_KEY, GREEK_LETTERS_KEY, CYLM_LONG_ALTERNATIVE_KEY,
+                SettingsPreferences.KEY_SPLIT_KEYBOARD, SettingsPreferences.KEY_SPLIT_RIGHT_G, SettingsPreferences.KEY_FILL_KEYBOARD_BLANK, SettingsPreferences.KEY_WIDE_KEYS, SettingsPreferences.KEY_EVEN_MERGED_KEYS, SettingsPreferences.KEY_NUMBER_ROW, SettingsPreferences.KEY_NUMBER_PAD_TOP_789, SettingsPreferences.KEY_SPLIT_GAP_PORTRAIT, SettingsPreferences.KEY_SPLIT_GAP_LANDSCAPE, CHINESE_GLIDE_KEY, DELETE_CHINESE_GLIDE_CHARACTER_KEY, com.kingzcheung.xime.glide.ExternalGlideEncodings.KEY, GLIDE_PREVIEW_KEY, ENGLISH_AUTO_SPACE_KEY, ENGLISH_PUNCTUATION_SPACE_KEY, EMAIL_SUFFIXES_KEY, ADDRESS_FIELDS_ENGLISH_KEY, SYMBOL_NAMES_KEY, GREEK_LETTERS_KEY, CYLM_LONG_ALTERNATIVE_KEY,
                 "space_hold_action", "cursor_gesture_mode", "cursor_hold_seconds", "neighbor_correction", com.kingzcheung.xime.settings.SpellingPatches.DOUBLE_PINYIN_CORRECTION_KEY, MIXED_INPUT_KEY, RARE_CHARACTERS_KEY, TRADITIONAL_OUTPUT_KEY, CANDIDATE_EMOJI_KEY, DATETIME_CANDIDATES_KEY, "symbol_input_mode", "symbol_long_press_seconds", "symbol_long_press_seconds_v2", "cursor_step_dp", "cursor_swipe_lines", "cursor_step_haptic", "cursor_step_sound", "key_text_scale", CORNER_HINT_OPACITY_KEY, HIDE_FUNCTION_KEY_HINTS_KEY, UPPERCASE_KEY_LABELS_KEY, CHINESE_UPPERCASE_KEY_LABELS_KEY, "fixed_symbols",
                 JAPANESE_KANJI_KEY, KOREAN_HANJA_KEY, CANTONESE_CHARACTERS_KEY,
-                "fourteen_letter_swipe", "fourteen_letter_swipe_dp", "reverse_symbol_swipe", CLEAR_ALL_WHILE_COMPOSING_KEY, CLEAR_BEFORE_CURSOR_ONLY_KEY, SWIPE_DISTANCE_DELETE_KEY, com.kingzcheung.xime.keyboard.DeleteRepeatSpeed.KEY, REVERSE_DELETE_SWIPE_KEY, CLEAR_SWIPE_PERCENT_KEY, JAPANESE_LONG_VOWEL_KEY, "syllable_split_key", "shift_syllable_split", "kana_direction_hints", "flick_direction_disc", "flick_direction_disc_v2",
+                "fourteen_letter_swipe", "fourteen_letter_swipe_dp", "reverse_symbol_swipe", CLEAR_ALL_WHILE_COMPOSING_KEY, CLEAR_BEFORE_CURSOR_ONLY_KEY, SWIPE_DISTANCE_DELETE_KEY, com.kingzcheung.xime.keyboard.DeleteRepeatSpeed.KEY, REVERSE_DELETE_SWIPE_KEY, CLEAR_SWIPE_PERCENT_KEY, JAPANESE_LONG_VOWEL_KEY, "syllable_split_key", "shift_syllable_split", SHIFT_TAP_LOCKS_KEY, "kana_direction_hints", "flick_direction_disc", "flick_direction_disc_v2",
                 "glide_typing", "glide_typing_v2", "letter_long_press_menu", "t9_flick_letters", "t9_glide_typing", "language_key_hold_seconds", "language_key_hold_seconds_v2", LANGUAGE_KEY_IME_PICKER_KEY, "symbol_key_hold_seconds", "t9_candidate_drag_percent", T9_MERGE_ZERO_ENTER_KEY, STROKE_MERGE_ZERO_ENTER_KEY, T9_SPACE_UP_ZERO_KEY,
                 SettingsPreferences.KEY_HANDWRITING_WUBI_HINTS, "qwerty_stagger_mode", "qwerty_stagger_custom", "qwerty_comma_key", "qwerty_period_key", "qwerty_period_key_v2", "bottom_punctuation_swipe_up_v3", com.kingzcheung.xime.service.ENGLISH_SENTENCE_CAPS,
                 DOUBLE_PINYIN_KEY_HINTS_KEY, DOUBLE_PINYIN_KEY_HINTS_WITH_CORNERS_KEY, DOUBLE_PINYIN_SEMICOLON_ON_SHIFT_KEY,
@@ -448,6 +457,7 @@ data class KeyboardInputPreferences(
                 wideKeys = SettingsPreferences.isWideKeysEnabled(context),
                 evenMergedKeys = SettingsPreferences.isEvenMergedKeysEnabled(context),
                 numberRow = numberRow,
+                numberPadTop789 = SettingsPreferences.isNumberPadTop789(context),
                 splitGapPortrait = SettingsPreferences.getSplitGapFraction(context, false),
                 splitGapLandscape = SettingsPreferences.getSplitGapFraction(context, true),
                 qwertyStagger = QwertyStaggerMode.entries.firstOrNull { it.name == prefs.getString("qwerty_stagger_mode", null) }
@@ -463,6 +473,7 @@ data class KeyboardInputPreferences(
                 qwertyPeriodKey = prefs.getBoolean("qwerty_period_key_v2", true),
                 syllableSplitKey = prefs.getBoolean("syllable_split_key", false),
                 shiftSyllableSplit = prefs.getBoolean("shift_syllable_split", false),
+                shiftTapLocks = prefs.getBoolean(SHIFT_TAP_LOCKS_KEY, false),
                 japaneseLongVowelKey = JapaneseLongVowelKey.fromName(prefs.getString(JAPANESE_LONG_VOWEL_KEY, null)),
                 sideSymbols = SideSymbolTarget.entries.mapNotNull { target ->
                     prefs.getString(target.prefKey, null)?.let { target.key to it }
@@ -639,6 +650,7 @@ data class KeyboardInputPreferences(
             .putBoolean("qwerty_period_key_v2", qwertyPeriodKey)
             .putBoolean("syllable_split_key", syllableSplitKey)
             .putBoolean("shift_syllable_split", shiftSyllableSplit)
+            .putBoolean(SHIFT_TAP_LOCKS_KEY, shiftTapLocks)
             .putString(JAPANESE_LONG_VOWEL_KEY, japaneseLongVowelKey.name)
             .putBoolean("qwerty_period_key", qwertyPeriodKey).apply()
     }

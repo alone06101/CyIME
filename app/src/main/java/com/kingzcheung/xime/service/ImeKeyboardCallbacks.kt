@@ -99,6 +99,11 @@ internal fun rememberImeKeyboardCallbacks(
                     service.isSecretEditor()) null
                 else runCatching { service.currentInputConnection?.getTextBeforeCursor(16, 0)?.toString() }.getOrNull()
             },
+            t9GlideComposition = {
+                // 九键的 inputText 是回显的拼音，数字要看引擎原始输入；组合已清空时不用上一次的。
+                if (service.t9PartialSegments.isNotEmpty() || service.candidateState.value.inputText.isEmpty()) ""
+                else T9GlideAlternatives.digitsOf(service.sessionController.engineInput).orEmpty()
+            },
             inputCommands = service.inputCommands,
             onT9UnconsumedDelete = service.keyRouter::processDeleteKey,
             onRetryRejectedCommit = service.keyRouter::retryRejectedCommit,

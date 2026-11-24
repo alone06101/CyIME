@@ -628,7 +628,8 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
             service.predictionManager.invalidatePendingPredictions()
             val cleared = current.copy(associationCandidates = emptyList())
             service.candidateState.value = cleared
-            val committed = commitEnglishLetter(cleared, mark, false, service::supportsEnglishCandidateReplace) {
+            val committed = commitEnglishLetter(cleared, mark, false, service::supportsEnglishCandidateReplace,
+                completionOn = SettingsPreferences.isSmartPredictionEnabled(service)) {
                 service.commitTextAndPredict(it, isPaste = false, allowPrediction = false).accepted
             }
             if (committed != null) service.candidateState.value = committed
@@ -839,7 +840,8 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
                     candidates = emptyList(), candidateComments = emptyList(), candidateActions = emptyList(),
                     pendingEnglishText = if (plan.pair && head != null) head + text else word, glidedWord = word,
                     associationCandidates = if (service.isSecretEditor()) emptyList() else plan.alternatives,
-                    englishReplaceSupported = replaceSupported,
+                    // 滑行是整词输入，像英文单词方案一样照常给候选，不看「智能联想」。
+                    englishReplaceSupported = replaceSupported, englishCompletionOff = false,
                     hasNextPage = false, hasPrevPage = false, isShowingRecentClipboard = false,
                 )
                 } finally {
@@ -1458,7 +1460,8 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
                         }
                     }
                     val next = commitEnglishLetter(current, key, isShifted || autoCaps,
-                        service::supportsEnglishCandidateReplace, afterGlide = afterGlide) {
+                        service::supportsEnglishCandidateReplace, afterGlide = afterGlide,
+                        completionOn = SettingsPreferences.isSmartPredictionEnabled(service)) {
                         val letter = if (fullWidthLetter) fullWidthLetters(it) else it
                         service.commitTextAndPredict(letter, isPaste = false, allowPrediction = false).accepted
                     }
@@ -1946,6 +1949,9 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
                                         syncCalculatorWithEditor(it)
                                 }
                         }
+                        // 数字键盘上打了字：收起候选栏里刚复制的内容（截图后才冒出来的图片也一样），和主键盘一打字就换成候选一样。
+                        // 以前只有切到数字键盘那一下清，图片晚到或在数字键盘里截图时一直占着候选栏，数字进不去（#542）。
+                        if (isNumberKeyboard && literal.isNotEmpty()) hideClipboardSuggestionsForTyping()
                         if (isNumberKeyboard) updateCalculatorCandidates()
                         // 数字键盘、常用符号面板打的 @：和主键盘一样给邮箱后缀（默认开），接着打的数字、点重新筛。
                         if (literal == "@" || literal == "＠" ||
@@ -2048,6 +2054,8 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
                             // 大写字母（Shift、Caps Lock 或 Shift 拖线中途在字母区松手）在雾凇系 26 键方案里
                             // 参与组字：字母表含 A–Z，大写串进当前输入（zuogeDNAjiance → 做个DNA检测，
                             // Transformer、KFC 由英文词库和自动大写给出），已打的拼音不被顶上屏。
+                            // 实体键盘的 Caps Lock 键本身不一样：按下那一下先把已打的拼音原样上屏（照电脑上的习惯，
+                            // 见 onKeyDown），之后锁着大写打的字母才从这里进组字。
                             val capitalsInRime = isShiftedChinese && !mergedKey && service.t9PartialSegments.isEmpty() &&
                                 (typesEnglishCapitals(state.currentSchemaId) || externalCapitalInRime(char[0]))
                             // 其他方案（双拼、14 键合并键等）没有大写字母编码：已打的字母按原样连同大写字母上屏，
@@ -3201,6 +3209,14 @@ internal class ImeKeyRouter(private val service: XimeInputMethodService) {
      * - index 0: 计算结果（如 "2"），点击直接替换为结果
      * - index 1: 带公式的结果（如 "1+1=2"），点击显示公式和结果
      */
+    /** 打字时收起候选栏里的剪贴板（文字和图片）；只是不显示，不算用过，下次弹出键盘照旧按 30 秒规则给。 */
+    private fun hideClipboardSuggestionsForTyping() {
+        val current = service.candidateState.value
+        if (!current.isShowingRecentClipboard) return
+        service.candidateState.value = current.copy(candidates = emptyList(), candidateComments = emptyList(),
+            clipboardImage = null, clipboardExtractedCount = 0, isShowingRecentClipboard = false)
+    }
+
     internal fun updateCalculatorCandidates() {
         val candidate = service.calculatorEngine.getCandidate()
         val result = service.calculatorEngine.getResult()

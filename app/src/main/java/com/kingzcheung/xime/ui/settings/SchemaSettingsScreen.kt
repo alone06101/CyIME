@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -98,7 +96,6 @@ fun SchemaSettingsContent(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val localViewModel: SchemaLocalViewModel = viewModel()
     val localUiState by localViewModel.uiState.collectAsStateWithLifecycle()
-    var showExtraSchemas by remember { mutableStateOf(false) }
     // 没写语言的导入方案正在选语言（GitHub #86）。
     var languageFor by remember { mutableStateOf<SchemaMeta?>(null) }
     languageFor?.let { target ->
@@ -387,14 +384,13 @@ fun SchemaSettingsContent(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // 关着的方案：常用的（14 键、双拼）一直列出；其余收在「其他已安装方案（高级）」里，折叠行写明有几个、带展开箭头。
-                // 以前按收起后的列表判断，收起时写「没有其他可用方案」，点开却是一长串（用户 10-31）。
+                // 关着的方案一个列表全部列出（用户 11-23：分「常用」和「其他已安装方案」两组多余）。
+                // 原来名单里的（双拼、五笔、仓颉、注音、笔画等）排在前面，其余接在后面。
                 val disabledAll = visibleSchemas.filter { it.schemaId !in uiState.enabledSchemas }.sortedBy { rankOf(it.schemaId) }
-                val listedOff = disabledAll.filter { it.schemaId in com.kingzcheung.xime.settings.CyimeInputDefaults.listedWhenOff }
-                val extraOff = disabledAll.filterNot { it.schemaId in com.kingzcheung.xime.settings.CyimeInputDefaults.listedWhenOff }
+                    .sortedBy { it.schemaId !in com.kingzcheung.xime.settings.CyimeInputDefaults.listedWhenOff }
 
                 // 关掉一个方案的那一帧，上面拖动排序的列表还没更新，同一个 id 会在两段里各出现一次；关着的行加前缀，key 不撞（11-03 关自然码崩溃）。
-                itemsIndexed(listedOff, key = { _, schema -> "off:${schema.schemaId}" }) { row, schema ->
+                itemsIndexed(disabledAll, key = { _, schema -> "off:${schema.schemaId}" }) { row, schema ->
                     SchemaToggleItem(
                         schema = schema,
                         enabled = false,
@@ -404,27 +400,8 @@ fun SchemaSettingsContent(
                         onSelect = { viewModel.selectSchema(schema) },
                         onChooseLanguage = { languageFor = schema },
                         groupIndex = row,
-                        groupSize = listedOff.size,
+                        groupSize = disabledAll.size,
                     )
-                }
-
-                if (extraOff.isNotEmpty()) item(key = "extra-schemas-fold") {
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp))
-                            .clickable { showExtraSchemas = !showExtraSchemas }
-                            .testTag("extra-schemas-fold")
-                            .padding(horizontal = 8.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(if (showExtraSchemas) "收起其他已安装方案" else "其他已安装方案(高级)",
-                            modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary)
-                        Text("${extraOff.size} 个", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Icon(if (showExtraSchemas) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (showExtraSchemas) "收起" else "展开",
-                            tint = MaterialTheme.colorScheme.primary)
-                    }
                 }
 
                 if (disabledAll.isEmpty()) {
@@ -436,20 +413,6 @@ fun SchemaSettingsContent(
                             modifier = Modifier.padding(horizontal = 8.dp)
                         )
                     }
-                }
-
-                if (showExtraSchemas) itemsIndexed(extraOff, key = { _, schema -> "off:${schema.schemaId}" }) { row, schema ->
-                    SchemaToggleItem(
-                        schema = schema,
-                        enabled = false,
-                        isCompiled = SchemaManager.isSchemaCompiled(context, schema.schemaId),
-                        isCurrent = false,
-                        onToggle = { viewModel.toggleSchema(schema) },
-                        onSelect = { viewModel.selectSchema(schema) },
-                        onChooseLanguage = { languageFor = schema },
-                        groupIndex = row,
-                        groupSize = extraOff.size,
-                    )
                 }
                 // 导入和从「扩展 › 方案」获取的方案包：卸载在这里；同名文件没确认的包留着，可以再装或删。
                 val packages = localUiState.packages.filterNot { it.packageId == "builtin" }

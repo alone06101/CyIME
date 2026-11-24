@@ -55,9 +55,8 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
     var remembered by remember { mutableStateOf(InputModes.rememberedModes(context)) }
     val availableProfiles = InputModes.ordered(context, profilesState.allSchemas
         .filter { it.schemaId in profilesState.enabledSchemas }.map { it.toSchemaInfo() })
-    // 一步选方案（用户 11-01 批准）：关着的内置方案（全拼 14 键、内置双拼）和它们的组合（如小鹤 14 键）也列在
-    // 布局、方案里，点了自动启用并部署，不用先去「已安装的方案」打开再回来。
     // 键盘里的方案面板用同一个 [SchemaPicking.offered]，两边列的方案一样（11-22）。
+    // 只列启用的方案（用户 11-23：关了的还显示、多出用不到的方案）；关着的在「方案管理」里打开。
     val pickableProfiles = InputModes.ordered(context,
         SchemaPicking.offered(profilesState.allSchemas.map { it.toSchemaInfo() }, profilesState.enabledSchemas))
     val dragOrder = rememberDragOrder(orderedLanguages.map { it.id }) { ids ->

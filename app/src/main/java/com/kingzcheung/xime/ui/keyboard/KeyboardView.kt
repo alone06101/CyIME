@@ -111,6 +111,7 @@ import com.kingzcheung.xime.service.highlightedCandidateIndex
 import com.kingzcheung.xime.service.shownPreedit
 import com.kingzcheung.xime.service.focusedT9AssociationIndex
 import com.kingzcheung.xime.service.usesT9CandidateNavigation
+import com.kingzcheung.xime.service.showsTypedEnglishWord
 import com.kingzcheung.xime.service.ExpandedCandidatePager
 import com.kingzcheung.xime.settings.KeysConfigHelper
 import com.kingzcheung.xime.settings.SettingsPreferences
@@ -402,7 +403,11 @@ fun KeyboardView(
     }
     if (backgroundMotion != null) SideEffect { backgroundMotion.covered = candidatePageExpanded || overlayVisible }
     // Compose background and keys into the same layer before applying opacity.
-    val contentModifier = if (state.handwritingExpanded) previewModifier else previewModifier
+    // 动态背景开着：键盘本体单独一层。背景每动一帧，导航条、玻璃键这些按动态背景画的地方要重画，
+    // 每次都会让整个界面的根重新录一遍；不在这层里时整块键盘（每个键的底、阴影）都跟着重录（11-23 平板：每帧主线程约 10 ms）。
+    // 单独一层后根只录一句「画这一层」，这层本身不动就不重录。不改样子：没有透明度、不离屏。
+    val motionIsolation = if (backgroundMotion != null) Modifier.graphicsLayer() else Modifier
+    val contentModifier = if (state.handwritingExpanded) previewModifier else motionIsolation.then(previewModifier)
         .keyboardBackground(themeScheme.keyboardBackground, state.isDarkTheme, keyboardBgColor,
             imageSlot = backgroundImageSlot)
         .splitGapCutout(splitKeyboardGap)
@@ -604,7 +609,7 @@ fun KeyboardView(
         // the results squeezed the keys.
         contentHeightDp = state.keyboardHeightDp + clipboardSearchExtraHeight(
             state.isFloatingMode && state.clipboardSearchVisible, state.clipboardSearchResultsHeight,
-            state.clipboardSearchInline),
+            state.clipboardSearchInline) + state.preeditStripDp,
         bottomContentPaddingDp = renderedBottomPaddingDp,
         bottomKeyClearance = floatingBottomClearance,
         fixedWidthDp = state.fixedWidthDp,
@@ -650,8 +655,10 @@ fun KeyboardView(
         }
         // 「候选字大小」超过 22sp 时候选栏整条放大的倍数（11-22）；面板让开候选栏时要按放大后的高度算。
         val candidateZoom = candidateTextZoom(rememberCandidateTextSize())
-        // 拼音贴在键盘上沿（小标签、方块、整行）时让应用的输入框往上让开那一截，见 PreeditTabInsets；悬浮键盘不占应用的地方，不用让。
-        val tabReservePx = if (inputPreferences.preeditOnTopLine && !state.isFloatingMode) {
+        // 拼音贴在键盘上沿（小标签、方块）时让应用的输入框往上让开那一截，见 PreeditTabInsets；悬浮键盘不占应用的地方，不用让。
+        // 整行排在键盘里、键盘本身加高了（state.preeditStripDp），不用再另让。
+        val tabReservePx = if (inputPreferences.preeditOnTopLine && !state.isFloatingMode &&
+            inputPreferences.preeditStyle != com.kingzcheung.xime.settings.SettingsPreferences.PREEDIT_STYLE_STRIP) {
             val tabHeight = if (inputPreferences.preeditStyle == com.kingzcheung.xime.settings.SettingsPreferences.PREEDIT_STYLE_BLOCK)
                 PREEDIT_BLOCK_HEIGHT else PREEDIT_TAB_HEIGHT
             // 拼音是单独的弹窗，弹窗里的 dp 按屏幕本来的 density 算，不跟候选栏放大（见 PreeditTab）。
@@ -896,7 +903,7 @@ fun KeyboardView(
                     state.quickSendFormFocused || state.toolPanelInputFocused -> false
                     sentenceEdit != null -> false
                     preeditEditSession != null -> { editPreedit(key = key); true }
-                    !state.isAsciiMode && state.inputProfile.capabilities.editablePinyin &&
+                    !state.isAsciiMode && state.inputProfile.capabilities.editableCode &&
                         callbacks.onOpenPreeditEditor != null &&
                         (preeditOpening || candidateState.value.isComposing || candidateState.value.inputText.isNotEmpty()) -> {
                         // Opening is asynchronous. Retain every step, and never leak it to
@@ -969,8 +976,12 @@ fun KeyboardView(
                 }
             }) else if (preeditEditSession != null) ({ key ->
                 val t9 = preeditEditSession?.isT9 == true
+                // 笔画键盘：分词键插分词号，通配键插 *，和笔画一样插在光标处（11-22）。
+                val strokeCode = !t9 && state.inputProfile.capabilities.editableStrokeCode
                 if (key.startsWith("preedit_cursor:")) {
                     editPreedit(key = key); true
+                } else if (strokeCode && (key == "word_separator" || key == "*")) {
+                    editPreedit(key = if (key == "*") "*" else "'"); true
                 } else if (key == "delete" || key == "'" || key.length == 1 &&
                     (key[0].lowercaseChar() in 'a'..'z' || t9 && key[0] in '1'..'9') ||
                     // 14 键的合并键（qw）：挪过光标后接着点，插在光标处（11-13：原来关掉编辑，插到哪、显示什么都乱）。
@@ -1481,7 +1492,7 @@ fun KeyboardView(
                         inputText = cs.inputText,
                         preeditText = cs.shownPreedit(state.inputProfile),
                         isComposing = cs.isComposing,
-                        associationCandidates = if (cs.pendingEnglishText.isNotEmpty() && cs.englishReplaceSupported) {
+                        associationCandidates = if (cs.showsTypedEnglishWord) {
                             listOf(cs.pendingEnglishText) + cs.associationCandidates
                         } else {
                             cs.associationCandidates
@@ -1537,6 +1548,9 @@ fun KeyboardView(
                 LocalCorrectedCandidates provides correctionMarks,
                 LocalPreeditLineCorrections provides allCorrectionMarks,
                 LocalPreeditToneData provides preeditToneData,
+                // 笔画方案的编码在组字区里自己画（11-23）。
+                LocalStrokeGlyphDrawing provides (!state.isAsciiMode &&
+                    state.inputProfile.scheme == com.kingzcheung.xime.settings.InputScheme.STROKE),
                 LocalSentenceSelection provides sentenceDragOwnerState,
                 LocalPreeditOrigin provides preeditOrigin,
                 LocalSentenceCandidateHighlight provides sentenceEdit?.let { owner ->
@@ -1777,7 +1791,9 @@ fun KeyboardView(
                 inlinePreeditEditor = drawPreeditEditor,
                 onEditPreedit = if (liveGlide == null && englishGlide == null && glideCandidatePreview.value.isEmpty() && !state.isAsciiMode && !isHandwritingPage &&
                     com.kingzcheung.xime.rime.PinyinEditBuffer.supports(state.currentSchemaId) &&
-                    callbacks.onOpenPreeditEditor != null) ({
+                    callbacks.onOpenPreeditEditor != null) ({ letters: Int? ->
+                    // 点在拼音哪里，打开后光标就放在哪里（排在打开之后执行，和打开前按的方向键同一条队列）。
+                    if (letters != null) pendingPreeditMoves.add("preedit_cursor:letters:$letters")
                     openPreeditEditor()
                 }) else null,
             )
@@ -1787,7 +1803,10 @@ fun KeyboardView(
             // 量候选栏的顶边：不占地方的标记，位置就是上面各栏加起来的高度。
             Spacer(Modifier.onPlaced { aboveCandidateBarPx.intValue = it.positionInParent().y.roundToInt() })
             // Opening a tool must not insert a row and shrink the underlying handwriting canvas.
-            if (!state.handwritingExpanded || candidatePageExpanded) renderCandidateBar(page)
+            // 「整行」拼音是候选栏上面多出来的一行，只给这条主候选栏（键盘已按 preeditStripDp 加高）。
+            if (!state.handwritingExpanded || candidatePageExpanded) {
+                CompositionLocalProvider(LocalPreeditStripRow provides state.preeditStripDp.dp) { renderCandidateBar(page) }
+            }
 
             val renderExpandedCandidates: @Composable () -> Unit = {
                 val cs = candidateState.value
@@ -1876,7 +1895,7 @@ fun KeyboardView(
                 }
                 val barAssociationCount = visibleBarAssociations.size
                 // 栏里的联想序号：英文打字时第一个是已打的原词（[associationWordAt] 同一规矩），展开页接着往下排。
-                val barAssociationWords = if (cs.pendingEnglishText.isNotEmpty() && cs.englishReplaceSupported)
+                val barAssociationWords = if (cs.showsTypedEnglishWord)
                     listOf(cs.pendingEnglishText) + cs.associationCandidates else cs.associationCandidates
                 CandidatePage(
                     state = CandidatePageState(
@@ -2048,7 +2067,9 @@ fun KeyboardView(
             Column(Modifier.clipboardUnderlaySize(clipboardPanel, state.keyboardHeightDp).fillMaxSize()
                 .then(if (state.themeId == com.kingzcheung.xime.ui.theme.TransparentGlassTheme.ID) Modifier
                     else Modifier.cySwapFadeIn(underlaySwapKey, instantKey = listOf(state.isAsciiMode, state.inputProfile.language)))
-                .excludeRevealedKeyboardPanels(panelsSeeKeyboardBackground, candidateReveal, overlayReveal).then(
+                // 展开候选页和按键是同一格、同样大（剪贴板拉高、全屏手写除外）：按它的进度在本层坐标里挖，铺满时整层不画，不靠量出来的窗口位置。
+                .excludeRevealedKeyboardPanels(panelsSeeKeyboardBackground, candidateReveal, overlayReveal,
+                    covering = candidateReveal.takeIf { clipboardPanel == null && !state.handwritingExpanded }).then(
                 if (candidatePageExpanded || overlayVisible) Modifier.clearAndSetSemantics {} else Modifier
             // 全屏手写开着工具面板时书写区仍露在面板上方，照旧不动它。
             ).blockCoveredKeyboardTouches((candidatePageExpanded || overlayVisible) && !state.handwritingExpanded)) {
@@ -2080,7 +2101,9 @@ fun KeyboardView(
                                 else -> {
                                     // 连续触摸可能早于下一次重组，提交时读取真实 Shift 状态。
                                     val shift = viewModel.shiftMode.value
-                                    callbacks.onKeyPress(shift.applyToKey(key), shift.isShifted)
+                                    val (shiftedKey, shifted) = shiftedKeyPress(key, shift,
+                                        com.kingzcheung.xime.service.ExplicitLowercase.isPending(key))
+                                    callbacks.onKeyPress(shiftedKey, shifted)
                                     if (shift == com.kingzcheung.xime.viewmodel.ShiftMode.HELD ||
                                         !com.kingzcheung.xime.service.JapaneseTyping.usesKanaCase(state.currentSchemaId, state.isAsciiMode)) {
                                         viewModel.onCharacterTyped()
@@ -2288,7 +2311,8 @@ fun KeyboardView(
                 val numberSpacing = kbKey.spacingFor(numberKeyboardSpacingSection(state.inputProfile, state.isAsciiMode))
                 val panelSuppressCursorMove = remember { mutableStateOf(false) }
                 val panelCursorMod = keyboardSwipeCursor(callbacks.onCursorMove, inputPreferences, panelSuppressCursorMove)
-                CompositionLocalProvider(LocalSuppressCursorMove provides panelSuppressCursorMove) {
+                CompositionLocalProvider(LocalSuppressCursorMove provides panelSuppressCursorMove,
+                    LocalKeyReleaseFeedback provides callbacks.onKeyRelease) {
                 when (panelType) {
                     PanelType.NUMBER -> NumberKeyboardLayout(
                         onKeyPress = { key ->
@@ -2419,6 +2443,19 @@ fun KeyboardView(
             }
         }
 
+        // 点了还在部署的方案：只在键盘上方一行转圈说在准备，不盖住键盘；好了自动换上（用户 11-23）。
+        state.schemePreparing?.let { name ->
+            Box(Modifier.matchParentSize().then(Modifier.zIndex(21f)), contentAlignment = Alignment.TopCenter) {
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(8.dp).background(keyboardBgColor.copy(alpha = 0.95f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp).testTag("scheme-preparing")) {
+                    androidx.compose.material3.CircularProgressIndicator(Modifier.size(14.dp), color = keyTextColor, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("正在准备「$name」，好了自动换上", color = keyTextColor, fontSize = 13.sp, maxLines = 1)
+                }
+            }
+        }
+
         state.rejectedCommitText?.let { rejected ->
             Box(Modifier.matchParentSize().then(Modifier.zIndex(20f))) {
                 RejectedCommitOverlay(rejected, keyboardBgColor, keyTextColor,
@@ -2528,7 +2565,7 @@ fun KeyboardView(
                     Modifier.align(Alignment.BottomCenter).absoluteOffset(x = slot.offsetXDp.dp).width(slot.widthDp.dp)
                         .height((slot.heightDp - candidateBarHeightDp(candidateBarScaleState.floatValue * candidateZoom)).coerceAtLeast(0f).dp)
                 } ?: Modifier.fillMaxSize().belowCandidateBar(aboveCandidateBarPx,
-                    candidateBarHeightDp(candidateBarScaleState.floatValue * candidateZoom).dp))
+                    (candidateBarHeightDp(candidateBarScaleState.floatValue * candidateZoom) + state.preeditStripDp).dp))
                     .testTag("keyboard-overlay"),
                 visibility = overlayVisibility,
                 revealState = overlayReveal,
@@ -2692,7 +2729,9 @@ fun KeyboardView(
                         modifier = panelMaterial.fillMaxWidth().fillMaxHeight(),
                         onHapticFeedback = onHapticFeedback,
                     )
-                    is OverlayRoute.Symbol -> SymbolKeyboardLayout(
+                    // 底栏「中文」「123」是 KeyButton，松手震动靠 LocalKeyReleaseFeedback（11-23 平板实测只震一下）；
+                    // 符号格是点按（松手才出字、才震），不走这里，不会震两次。
+                    is OverlayRoute.Symbol -> CompositionLocalProvider(LocalKeyReleaseFeedback provides callbacks.onKeyRelease) { SymbolKeyboardLayout(
                         onKeyPressDown = callbacks.onKeyPressDown,
                         onKeyRelease = callbacks.onKeyRelease,
                         isFloatingMode = state.isFloatingMode,
@@ -2725,7 +2764,7 @@ fun KeyboardView(
                         bottomPaddingDp = renderedBottomPaddingDp,
                         modifier = panelMaterial.fillMaxWidth().fillMaxHeight(),
                         onHapticFeedback = onHapticFeedback,
-                    )
+                    ) }
                     is OverlayRoute.SplitWords -> SplitWordsView(
                         text = p.route.text,
                         backgroundColor = keyboardBgColor,

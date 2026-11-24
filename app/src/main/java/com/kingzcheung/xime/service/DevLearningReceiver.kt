@@ -42,6 +42,8 @@ import kotlin.concurrent.thread
  * - `op=enter_probe --es method <做法> --es marker t01`：清空当前输入框，上屏标记，用这一种做法回车，
  *   回 `result=sent|newline|nothing|other`（只报长度）。做法见 [EnterProbe.methods]；给 QQ、微信试哪种回车发送、哪种换行。
  *   会真的发出消息，只在文件传输助手、我的电脑这类发给自己的聊天里用。
+ * - `op=stt_record --ez on true|false`：开关「保存语音调优录音」（和设置页同一个值），回 `stt_record=true|false`；
+ *   录音存 Android/data/<包名>/files/speech_tuning/，电脑 adb pull 回放比模型。测完关回去。
  * 输入法正在部署时回 busy，稍后重试。每个 op 的结果写进广播结果（am broadcast 会打印 data=...）和 logcat 标签 DevLearning。
  * 用法：adb shell am broadcast -n com.cyletix.cyime/com.kingzcheung.xime.service.DevLearningReceiver -a com.cyletix.cyime.DEV_LEARNING --es op unlearn
  * 只有 adb（持有 DUMP 权限）能发，普通应用发不进来。
@@ -56,6 +58,10 @@ class DevLearningReceiver : BroadcastReceiver() {
                 SettingsPreferences.setIncognito(app, intent.getBooleanExtra("on", true))
                 // `am broadcast` prints this, so a script can check the switch really changed.
                 report("incognito=${SettingsPreferences.isIncognito(app)}")
+            }
+            "stt_record" -> {
+                SettingsPreferences.setSttDebugRecord(app, intent.getBooleanExtra("on", false))
+                report("stt_record=${SettingsPreferences.isSttDebugRecord(app)}")
             }
             "unlearn" -> {
                 val file = File(app.getExternalFilesDir(null), "unlearn.tsv")
