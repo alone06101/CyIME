@@ -4,6 +4,14 @@
   <a href="README.en.md">English</a> · <a href="README.zh-TW.md">繁體中文</a>
 </p>
 
+> **本仓库是 [Cyletix/CyIME](https://github.com/Cyletix/CyIME) 的 fork**，跟随上游同步，并做了如下改动：
+>
+> 1. **允许把导入的英语方案设为默认英语**：上游默认锁定内置英语，导入的英语方案（如「万象英语」）无法设为默认。本 fork 解除该限制，语言键可切到导入的英语方案。
+> 2. **同步翻译栏提示的测试断言**：上游某次提交把提示改成「中英互译」却漏改单测，导致上游自带 CI 持续失败；本 fork 已同步修复。
+> 3. **独立签名与 Release**：本 fork 用自己的正式签名密钥构建并发布 Release（见右侧 Releases），方便直接下载。签名与上游官方不同，已装官方版需先卸载再装本 fork；本 fork 各版本之间可正常覆盖升级。
+>
+> Release 标签形如 `v<上游版本>-fork.N`。
+
 **CyIME** 是 Cyletix 开发的 Android 输入法，基于 [Rime](https://rime.im/) 引擎，fork自Xime。中文拼音九键双拼五笔笔画仓颉注音英日西俄法德意越，离线语音手写拍照OCR识别，另有给听障人士用的实时字幕。
 
 ## 目标
