@@ -180,24 +180,18 @@ internal fun AppUpdateHomeNotice(release: AppRelease, onOpen: () -> Unit) {
     }
 }
 
-/** 更新后设置首页顶上的一次性提示：点了去「更新内容」，点 × 只关掉；两样都记成这一版已看过。 */
+/** 更新后设置首页顶上的一次性提示：点进去看「更新内容」才记成这一版已看过，没有 × 直接跳过。 */
 @Composable
-internal fun ReleaseNotesHomeNotice(onOpen: () -> Unit, onDismiss: () -> Unit) {
+internal fun ReleaseNotesHomeNotice(onOpen: () -> Unit) {
     SettingsSection(title = "更新内容") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) {
-                SettingsItem(
-                    icon = Icons.TwoTone.NewReleases,
-                    title = "已更新到 CyIME ${BuildConfig.VERSION_NAME}",
-                    subtitle = "点这里看这一版改了什么",
-                    onClick = onOpen,
-                    searchKey = "已更新提示",
-                )
-            }
-            IconButton(onClick = onDismiss, modifier = Modifier.padding(end = 4.dp)) {
-                Icon(Icons.Filled.Close, contentDescription = "不再提示这一版",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+        SettingsItem(
+            icon = Icons.TwoTone.NewReleases,
+            title = "已更新到 CyIME ${BuildConfig.VERSION_NAME}",
+            subtitle = "点这里看这一版改了什么",
+            onClick = onOpen,
+            searchKey = "已更新提示",
+            status = "●",
+            statusTone = SettingsStatusTone.WARNING,
+        )
     }
 }

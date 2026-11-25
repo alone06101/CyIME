@@ -174,10 +174,6 @@ fun SettingsMainContent(
                         showReleaseNotesNotice = false
                         onNavigateToRoute(SettingsRoutes.ReleaseNotes)
                     },
-                    onDismiss = {
-                        showReleaseNotesNotice = false
-                        com.kingzcheung.xime.update.ReleaseNotes.markSeen(context)
-                    },
                 )
             }
             if (searchQuery.isNotBlank()) item {

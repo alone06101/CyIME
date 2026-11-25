@@ -171,6 +171,12 @@ fun AboutContent(
         mutableStateOf(SettingsPreferences.isVerboseLoggingEnabled(context))
     }
     var launchAdEgg by remember { mutableStateOf(SettingsPreferences.isLaunchAdEggEnabled(context)) }
+    var releaseNotesUnread by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        releaseNotesUnread = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.kingzcheung.xime.update.ReleaseNotes.shouldPromptNow(context)
+        }
+    }
     
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -285,7 +291,9 @@ fun AboutContent(
                         SettingsItem(
                             icon = Icons.TwoTone.NewReleases,
                             title = "更新内容",
-                            onClick = onNavigateToReleaseNotes
+                            onClick = onNavigateToReleaseNotes,
+                            status = if (releaseNotesUnread) "●" else null,
+                            statusTone = SettingsStatusTone.WARNING
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(start = 56.dp),

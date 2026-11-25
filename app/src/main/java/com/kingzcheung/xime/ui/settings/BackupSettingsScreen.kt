@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.twotone.ContentPaste
 import androidx.compose.material.icons.twotone.Download
+import androidx.compose.material.icons.twotone.Extension
 import androidx.compose.material.icons.twotone.Person
 import androidx.compose.material.icons.twotone.Upload
 import androidx.compose.material3.AlertDialog
@@ -59,6 +60,7 @@ fun BackupSettingsContent(onBack: () -> Unit) {
     // 和其他开关一样记住选择（以前只存在页面状态里，退出再进来就变回关）。
     var includePersonal by remember { mutableStateOf(BackupChoices.includePersonal(context)) }
     var includeClipboardHistory by remember { mutableStateOf(BackupChoices.includeClipboardHistory(context)) }
+    var includePluginConfig by remember { mutableStateOf(BackupChoices.includePluginConfig(context)) }
     // 当前操作（"export"/"import"）：loading 只出现在触发它的按钮上，其余按钮仅禁用
     var busyOp by remember { mutableStateOf<String?>(null) }
     val busy = busyOp != null
@@ -72,7 +74,7 @@ fun BackupSettingsContent(onBack: () -> Unit) {
         busyOp = "export"
         message = null
         scope.launch {
-            val result = withContext(Dispatchers.IO) { BackupManager.exportTo(context, uri, includePersonal, includeClipboardHistory) }
+            val result = withContext(Dispatchers.IO) { BackupManager.exportTo(context, uri, includePersonal, includeClipboardHistory, includePluginConfig) }
             busyOp = null
             message = result.fold(
                 onSuccess = { "备份已导出" + if (includePersonal) "(含个人词库与学习数据)" else "" },
@@ -166,8 +168,15 @@ fun BackupSettingsContent(onBack: () -> Unit) {
                         checked = includeClipboardHistory,
                         onCheckedChange = { includeClipboardHistory = it; BackupChoices.setIncludeClipboardHistory(context, it) }
                     )
+                    SettingsToggleItem(
+                        icon = Icons.TwoTone.Extension,
+                        title = "包含插件配置",
+                        subtitle = "AI、翻译等插件填的密钥和配置",
+                        checked = includePluginConfig,
+                        onCheckedChange = { includePluginConfig = it; BackupChoices.setIncludePluginConfig(context, it) }
+                    )
                     Text(
-                        text = "设置、主题、布局和固定的剪贴板记录总会备份；不含插件、模型、图片和密码。",
+                        text = "设置、主题、布局和固定的剪贴板记录总会备份；勾选的插件配置（含密钥）和剪贴板历史才备份；不含模型、图片和插件本体。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
@@ -255,5 +264,14 @@ internal object BackupChoices {
     fun setIncludeClipboardHistory(context: android.content.Context, include: Boolean) {
         com.kingzcheung.xime.settings.SettingsPreferences.getPrefsPublic(context).edit()
             .putBoolean(KEY_INCLUDE_CLIPBOARD_HISTORY, include).apply()
+    }
+
+    /** 「包含插件配置」，默认关：插件配置含 API 密钥等敏感信息。 */
+    const val KEY_INCLUDE_PLUGIN_CONFIG = "backup_include_plugin_config"
+    fun includePluginConfig(context: android.content.Context): Boolean =
+        com.kingzcheung.xime.settings.SettingsPreferences.getPrefsPublic(context).getBoolean(KEY_INCLUDE_PLUGIN_CONFIG, false)
+    fun setIncludePluginConfig(context: android.content.Context, include: Boolean) {
+        com.kingzcheung.xime.settings.SettingsPreferences.getPrefsPublic(context).edit()
+            .putBoolean(KEY_INCLUDE_PLUGIN_CONFIG, include).apply()
     }
 }

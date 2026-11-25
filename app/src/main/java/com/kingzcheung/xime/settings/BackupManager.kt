@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import android.net.Uri
 import com.kingzcheung.xime.BuildConfig
+import com.kingzcheung.xime.plugin.SecureValueCipher
 import java.io.File
 import java.io.OutputStream
 import java.util.zip.ZipEntry
@@ -191,7 +192,7 @@ object BackupManager {
     }
 
     /** 写本地备份包到 [output]，返回写入的文件数（不含设置 JSON）。[clipboard]：剪贴板记录 JSON，null 不写。 */
-    fun writeLocalBackup(context: Context, output: OutputStream, includePersonal: Boolean, clipboard: String? = null): Int {
+    fun writeLocalBackup(context: Context, output: OutputStream, includePersonal: Boolean, clipboard: String? = null, includePluginConfig: Boolean = false): Int {
         val files = localBackupFiles(context.filesDir, includePersonal)
         ZipOutputStream(output).use { zos ->
             fun put(name: String, bytes: ByteArray) {
@@ -217,6 +218,11 @@ object BackupManager {
                     put(META_PREFIX + "prefs/$name.json", keepKeys(prefsToJson(prefs), keys).toByteArray(Charsets.UTF_8))
             }
             clipboard?.let { put(CLIPBOARD_ENTRY, it.toByteArray(Charsets.UTF_8)) }
+            if (includePluginConfig) {
+                pluginConfigIds(context).forEach { id ->
+                    pluginConfigJson(context, id)?.let { put(META_PREFIX + "plugin_configs/$id.json", it.toByteArray(Charsets.UTF_8)) }
+                }
+            }
             files.forEach { (name, file) ->
                 zos.putNextEntry(ZipEntry(name))
                 file.inputStream().use { it.copyTo(zos) }
@@ -228,10 +234,10 @@ object BackupManager {
     }
 
     /** 导出到用户选择的文档 Uri。 */
-    fun exportTo(context: Context, uri: Uri, includePersonal: Boolean, includeClipboardHistory: Boolean = false): Result<Int> = runCatching {
+    fun exportTo(context: Context, uri: Uri, includePersonal: Boolean, includeClipboardHistory: Boolean = false, includePluginConfig: Boolean = false): Result<Int> = runCatching {
         val clipboard = clipboardBackupJson(context, includeClipboardHistory)
         val output = context.contentResolver.openOutputStream(uri, "wt") ?: error("无法写入所选位置")
-        output.use { writeLocalBackup(context, it, includePersonal, clipboard) }
+        output.use { writeLocalBackup(context, it, includePersonal, clipboard, includePluginConfig) }
     }.onFailure { Log.e(TAG, "exportTo failed", it) }
 
     /** 读取用户选择的备份包；不是 CyIME 备份时拒绝，避免把任意 zip 解进 rime 目录。 */
@@ -289,6 +295,7 @@ object BackupManager {
                 // 回滚快照（replace）原样写回；备份内容不覆盖本机部署状态
                 val data = when {
                     replace -> json
+                    name.startsWith("plugin_cfg_") -> encryptPluginConfig(json)
                     name == PREFS_NAME_SETTINGS -> stripDeviceState(json.toString(Charsets.UTF_8)).toByteArray(Charsets.UTF_8)
                     // 只认允许的键，备份包写不进固定条目
                     name in PARTIAL_PREFS -> keepKeys(json.toString(Charsets.UTF_8), PARTIAL_PREFS.getValue(name)).toByteArray(Charsets.UTF_8)
@@ -370,5 +377,39 @@ object BackupManager {
         entries += (META_PREFIX + "settings.json") to
             stripDeviceState(prefsToJson(settingsPrefs)).toByteArray(Charsets.UTF_8)
         return entries
+    }
+
+    /** 列出所有插件配置 id（shared_prefs 下 plugin_cfg_<id>.xml）。 */
+    internal fun pluginConfigIds(context: Context): List<String> {
+        val dir = File(context.dataDir, "shared_prefs")
+        return dir.listFiles().orEmpty()
+            .filter { it.isFile && it.name.startsWith("plugin_cfg_") && it.name.endsWith(".xml") }
+            .map { it.name.removePrefix("plugin_cfg_").removeSuffix(".xml") }
+            .sorted()
+    }
+
+    /** 解密后的插件配置（明文 JSON，prefsToJson 格式）；空或读不到时 null。 */
+    internal fun pluginConfigJson(context: Context, pluginId: String): String? {
+        val prefs = context.getSharedPreferences("plugin_cfg_$pluginId", Context.MODE_PRIVATE)
+        if (prefs.all.isEmpty()) return null
+        val root = org.json.JSONObject()
+        for ((key, value) in prefs.all) {
+            if (value !is String) continue
+            val plain = SecureValueCipher.decrypt(value) ?: continue
+            root.put(key, org.json.JSONObject().put("t", "s").put("v", plain))
+        }
+        return if (root.length() == 0) null else root.toString()
+    }
+
+    /** 恢复时把明文插件配置重新加密成密文（prefsToJson 格式）。 */
+    internal fun encryptPluginConfig(json: ByteArray): ByteArray {
+        val root = org.json.JSONObject(json.toString(Charsets.UTF_8))
+        val out = org.json.JSONObject()
+        for (key in root.keys().asSequence().toList()) {
+            val entry = root.optJSONObject(key) ?: continue
+            if (entry.optString("t") != "s") continue
+            out.put(key, org.json.JSONObject().put("t", "s").put("v", SecureValueCipher.encrypt(entry.getString("v"))))
+        }
+        return out.toString().toByteArray(Charsets.UTF_8)
     }
 }
