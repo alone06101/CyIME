@@ -188,7 +188,9 @@ class CellDictionaryStore(val directory: File) {
      * converted line by line, up to [TxtCellDictionary.MAX_BYTES] (万象's base list is 49 MB);
      * SCEL and JSON stay at 16 MB and go through [install].
      */
-    fun installFile(input: InputStream): InstalledCellDictionary {
+    fun installFile(input: InputStream): InstalledCellDictionary = installFileMany(input).first()
+
+    fun installFileMany(input: InputStream): List<InstalledCellDictionary> {
         directory.mkdirs()
         // Left behind when the app was killed mid-import; only imports use this prefix.
         directory.listFiles { file -> file.name.startsWith(".import-") }?.forEach { it.delete() }
@@ -220,20 +222,78 @@ class CellDictionaryStore(val directory: File) {
             }
             if (scel || json) {
                 require(source.length() <= ScelDictionary.MAX_BYTES) { "SCEL 和 JSON 词库最大 16 MB" }
-                return install(source.readBytes())
+                return listOf(install(source.readBytes()))
             }
             val hash = digest.digest().joinToString("") { "%02x".format(it) }
             // Gboard's zip and Microsoft Pinyin's .dctx are unpacked to plain lines first.
             DictionaryImportFormats.toText(source)?.let { text ->
-                try { return installText(text, hash) } finally { text.delete() }
+                try { return installTextParts(text, hash) } finally { text.delete() }
             }
-            return installText(source, hash)
+            return installTextParts(source, hash)
         } finally { source.delete() }
     }
 
+    /** 文本词库可能超过单库上限：切成多份，分别转成多个词库。 */
+    private fun installTextParts(source: File, hash: String): List<InstalledCellDictionary> {
+        val chunks = splitTextFile(source)
+        if (chunks.size == 1) return listOf(installText(chunks[0], hash))
+        val result = mutableListOf<InstalledCellDictionary>()
+        chunks.forEachIndexed { index, chunk ->
+            try {
+                result += installText(chunk, hash, part = index)
+            } finally {
+                chunk.delete()
+            }
+        }
+        return result
+    }
+
+    /** 把文本词库按行切成不超过 [TxtCellDictionary.MAX_ENTRIES] 个词条的多个文件；没超限返回原文件。 */
+    private fun splitTextFile(source: File): List<File> {
+        val maxLines = TxtCellDictionary.MAX_ENTRIES
+        var total = 0
+        source.bufferedReader().use { reader ->
+            while (true) {
+                val line = reader.readLine() ?: break
+                val t = line.trim()
+                if (t.isNotEmpty() && !t.startsWith("#")) total++
+            }
+        }
+        if (total <= maxLines) return listOf(source)
+        val chunks = mutableListOf<File>()
+        var chunk = File.createTempFile(".import-", ".part", directory)
+        var writer = chunk.bufferedWriter()
+        var count = 0
+        try {
+            source.bufferedReader().use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    val t = line.trim()
+                    if (t.isNotEmpty() && !t.startsWith("#")) count++
+                    writer.write(line)
+                    writer.newLine()
+                    if (count >= maxLines) {
+                        writer.close()
+                        chunks += chunk
+                        chunk = File.createTempFile(".import-", ".part", directory)
+                        writer = chunk.bufferedWriter()
+                        count = 0
+                    }
+                }
+            }
+            writer.close()
+            if (count > 0) chunks += chunk else chunk.delete()
+        } catch (e: Exception) {
+            writer.close()
+            chunks.forEach { it.delete() }
+            throw e
+        }
+        return chunks
+    }
+
     /** Converted outside the lock (a big list takes seconds), then moved in and recorded under it. */
-    private fun installText(source: File, hash: String): InstalledCellDictionary {
-        val id = "local_${hash.take(24)}"
+    private fun installText(source: File, hash: String, part: Int = 0): InstalledCellDictionary {
+        val id = if (part == 0) "local_${hash.take(24)}" else "local_${hash.take(24)}_part$part"
         read().installed.firstOrNull { it.id == id }?.let { if (dictionaryFile(id).isFile) return it }
         val converted = File.createTempFile(".import-", ".tmp", directory)
         val strokeWords = File.createTempFile(".import-", ".tmp", directory)

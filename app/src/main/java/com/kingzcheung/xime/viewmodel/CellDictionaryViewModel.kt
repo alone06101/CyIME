@@ -11,6 +11,7 @@ import com.kingzcheung.xime.settings.CellDictionaryState
 import com.kingzcheung.xime.settings.CellWordAutoUpdate
 import com.kingzcheung.xime.settings.DictionaryExport
 import com.kingzcheung.xime.settings.DictionaryExportSources
+import com.kingzcheung.xime.settings.InstalledCellDictionary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,14 +71,20 @@ class CellDictionaryViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun import(uri: Uri) = work("正在导入词库…") {
-        val entry = requireNotNull(context.contentResolver.openInputStream(uri)) { "无法打开文件" }
-            .use(store::installFile)
-        store.select(entry.id, true)
-        val skipped = if (entry.skipped > 0) "，跳过 ${entry.skipped} 行（单字或没有拼音）" else ""
-        val total = entry.count + entry.english + entry.stroke
-        // 笔画词库的词（「词 笔画编码」）只给笔画输入用，拼音打不出来，说清楚（11-19）。
-        if (entry.stroke > 0) "已导入「${entry.name}」$total 个词$skipped，其中 ${entry.stroke} 个笔画编码的词只给笔画输入用，点「应用更改」后生效"
-        else "已导入「${entry.name}」$total 个词$skipped，点「应用更改」后生效"
+        val entries = requireNotNull(context.contentResolver.openInputStream(uri)) { "无法打开文件" }
+            .use(store::installFileMany)
+        entries.forEach { store.select(it.id, true) }
+        summarizeImport(entries)
+    }
+
+    private fun summarizeImport(entries: List<InstalledCellDictionary>): String {
+        val total = entries.sumOf { it.count + it.english + it.stroke }
+        val skipped = entries.sumOf { it.skipped }
+        val stroke = entries.sumOf { it.stroke }
+        val skippedText = if (skipped > 0) "，跳过 $skipped 行（单字或没有拼音）" else ""
+        val strokeText = if (stroke > 0) "，其中 $stroke 个笔画编码的词只给笔画输入用" else ""
+        val splitText = if (entries.size > 1) "（自动分成 ${entries.size} 个词库）" else ""
+        return "已导入「${entries.firstOrNull()?.name ?: "本地词库"}」$total 个词$skippedText$strokeText$splitText，点「应用更改」后生效"
     }
 
     /** 批量导入多个词库文件：逐个导入并更新进度，最后汇总。 */
@@ -91,12 +98,12 @@ class CellDictionaryViewModel(application: Application) : AndroidViewModel(appli
                         var total = 0; var skipped = 0; var stroke = 0
                         uris.forEachIndexed { index, uri ->
                             state.update { it.copy(message = "正在导入第 ${index + 1}/${uris.size} 个词库…") }
-                            val entry = requireNotNull(context.contentResolver.openInputStream(uri)) { "无法打开文件" }
-                                .use(store::installFile)
-                            store.select(entry.id, true)
-                            total += entry.count + entry.english + entry.stroke
-                            skipped += entry.skipped
-                            stroke += entry.stroke
+                            val entries = requireNotNull(context.contentResolver.openInputStream(uri)) { "无法打开文件" }
+                                .use(store::installFileMany)
+                            entries.forEach { store.select(it.id, true) }
+                            total += entries.sumOf { it.count + it.english + it.stroke }
+                            skipped += entries.sumOf { it.skipped }
+                            stroke += entries.sumOf { it.stroke }
                         }
                         Triple(total, skipped, stroke) to store.read()
                     }
