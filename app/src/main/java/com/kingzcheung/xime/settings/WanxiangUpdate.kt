@@ -105,11 +105,17 @@ object WanxiangUpdate {
         fetchLatestRelease()
     }
 
-    /** 下载并安装万象拼音最新版；成功返回 true。 */
-    suspend fun update(context: Context, release: Release): Boolean = withContext(Dispatchers.IO) {
+    /** 下载并安装万象拼音最新版；成功返回 true。进度回调用于 UI 展示。 */
+    suspend fun update(
+        context: Context,
+        release: Release,
+        onDownloadProgress: (Long, Long) -> Unit = { _, _ -> },
+        onInstalling: () -> Unit = {},
+    ): Boolean = withContext(Dispatchers.IO) {
         val scheme = marketScheme(release)
-        val dl = XimeIndexSource.downloadScheme(context, scheme)
+        val dl = XimeIndexSource.downloadScheme(context, scheme, onDownloadProgress = onDownloadProgress)
         if (!dl.success) return@withContext false
+        onInstalling()
         val inst = XimeIndexSource.installFromMarket(context, scheme)
         if (!inst.success) return@withContext false
         markInstalled(context, release.version)

@@ -52,6 +52,9 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
     var message by remember { mutableStateOf("") }
     var wanxiangRelease by remember { mutableStateOf<com.kingzcheung.xime.settings.WanxiangUpdate.Release?>(null) }
     var wanxiangChecking by remember { mutableStateOf(false) }
+    var wanxiangUpdating by remember { mutableStateOf(false) }
+    var wanxiangProgress by remember { mutableStateOf(0L to 0L) }
+    var wanxiangInstalling by remember { mutableStateOf(false) }
     val profilesModel: com.kingzcheung.xime.viewmodel.SchemaSettingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val profilesState by profilesModel.uiState.collectAsState()
     var remembered by remember { mutableStateOf(InputModes.rememberedModes(context)) }
@@ -209,7 +212,7 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
                     SettingsItem(Icons.TwoTone.ViewModule, "双拼方案",
                         "选择双拼方案，或自建方案", onClick = onOpenDoublePinyin, showArrow = true)
                     SettingsItem(Icons.TwoTone.Download, "检查万象拼音更新",
-                        "从 GitHub 拉取万象拼音最新版", onClick = {
+                        if (wanxiangChecking) "正在检查…" else "从 GitHub 拉取万象拼音最新版", onClick = {
                             wanxiangChecking = true
                             scope.launch {
                                 val release = com.kingzcheung.xime.settings.WanxiangUpdate.checkUpdate(context)
@@ -266,21 +269,46 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
             val installed = com.kingzcheung.xime.settings.WanxiangUpdate.installedVersion(context)
             val hasUpdate = installed != release.version
             AlertDialog(
-                onDismissRequest = { wanxiangRelease = null },
+                onDismissRequest = { if (!wanxiangUpdating) wanxiangRelease = null },
                 title = { Text("万象拼音更新") },
-                text = { Text("当前安装：${installed ?: "未知"}\n最新版本：${release.version}${if (hasUpdate) "（有更新）" else "（已是最新）"}") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        wanxiangRelease = null
-                        wanxiangChecking = true
-                        scope.launch {
-                            val ok = com.kingzcheung.xime.settings.WanxiangUpdate.update(context, release)
-                            wanxiangChecking = false
-                            message = if (ok) "万象拼音已更新到 ${release.version}" else "万象拼音更新失败，请稍后重试"
+                text = {
+                    if (wanxiangUpdating) {
+                        val (done, total) = wanxiangProgress
+                        val progressText = if (wanxiangInstalling) {
+                            "正在安装并部署…"
+                        } else {
+                            val doneMb = done / (1024 * 1024)
+                            val totalMb = total / (1024 * 1024)
+                            val percent = if (total > 0) (done * 100 / total).toInt() else 0
+                            "正在下载：$percent%" + if (total > 0) "（$doneMb / $totalMb MB）" else ""
                         }
-                    }) { Text(if (hasUpdate) "更新" else "重新下载") }
+                        Text(progressText)
+                    } else {
+                        Text("当前安装：${installed ?: "未知"}\n最新版本：${release.version}${if (hasUpdate) "（有更新）" else "（已是最新）"}")
+                    }
                 },
-                dismissButton = { TextButton(onClick = { wanxiangRelease = null }) { Text("关闭") } }
+                confirmButton = {
+                    if (!wanxiangUpdating) {
+                        TextButton(onClick = {
+                            wanxiangUpdating = true
+                            wanxiangInstalling = false
+                            wanxiangProgress = 0L to 0L
+                            scope.launch {
+                                val ok = com.kingzcheung.xime.settings.WanxiangUpdate.update(
+                                    context, release,
+                                    onDownloadProgress = { done, total -> wanxiangProgress = done to total },
+                                    onInstalling = { wanxiangInstalling = true },
+                                )
+                                wanxiangUpdating = false
+                                wanxiangRelease = null
+                                message = if (ok) "万象拼音已更新到 ${release.version}" else "万象拼音更新失败，请稍后重试"
+                            }
+                        }) { Text(if (hasUpdate) "更新" else "重新下载") }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { if (!wanxiangUpdating) wanxiangRelease = null }) { Text("关闭") }
+                }
             )
         }
     }
