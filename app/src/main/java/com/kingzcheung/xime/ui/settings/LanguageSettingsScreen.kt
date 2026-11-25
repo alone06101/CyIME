@@ -284,7 +284,7 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
                         }
                         Text(progressText)
                     } else {
-                        Text("当前安装：${installed ?: "未知"}\n最新版本：${release.version}${if (hasUpdate) "（有更新）" else "（已是最新）"}")
+                        Text("当前安装：${installed ?: "未知"}\n最新版本：${release.version}${if (hasUpdate) "（有更新）" else "（已是最新）"}\n\n语法模型（wanxiang-lts-zh-hans.gram）已被词组模型取代，无需更新。")
                     }
                 },
                 confirmButton = {
