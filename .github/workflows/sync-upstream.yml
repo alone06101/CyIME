@@ -10,6 +10,10 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -19,30 +23,58 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: 检查上游是否有新提交
+        id: check
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/Cyletix/CyIME.git 2>/dev/null || true
+          git fetch upstream main
+          NEW=$(git rev-list --count origin/main..upstream/main)
+          echo "new_commits=$NEW" >> "$GITHUB_OUTPUT"
+          if [ "$NEW" -eq 0 ]; then
+            echo "上游没有新提交，今天不建分支、不开 PR。"
+          else
+            echo "上游有 $NEW 个新提交待同步。"
+          fi
+
       - name: 同步上游并开 PR
+        if: steps.check.outputs.new_commits != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add upstream https://github.com/Cyletix/CyIME.git || true
-          git fetch upstream main
 
+          BASE="origin/main"
           BRANCH="sync/upstream-$(date +%Y%m%d-%H%M%S)"
-          git checkout -b "$BRANCH"
+          git checkout -b "$BRANCH" "$BASE"
 
+          CONFLICT="no"
           if git merge upstream/main --no-edit; then
             echo "✅ 已干净合并上游 main"
           else
-            echo "⚠️ 存在合并冲突，保留冲突标记，PR 里手动解决"
+            echo "⚠️ 存在合并冲突，提交冲突标记，需在 PR 里手动解决"
+            CONFLICT="yes"
             git add -A
-            git commit -m "merge upstream/main (需要手动解决冲突)" --no-verify || true
+            git commit -m "merge upstream/main (需要手动解决冲突)" --no-verify
           fi
 
+          AHEAD=$(git rev-list --count "$BASE..HEAD")
+          if [ "$AHEAD" -eq 0 ]; then
+            echo "合并后与 main 无差异，不建分支、不开 PR。"
+            exit 0
+          fi
+
+          echo "分支相对 main 领先 $AHEAD 个提交，开始推送并开 PR"
           git push -u origin "$BRANCH"
+
+          if [ "$CONFLICT" = "yes" ]; then
+            BODY="由 Actions 定时创建的上游同步 PR。本次合并存在冲突，分支里带着冲突标记，需要手动解决后才能合并。"
+          else
+            BODY="由 Actions 定时创建的上游同步 PR，已干净合并上游 main，可直接 Merge。"
+          fi
 
           gh pr create --base main --head "$BRANCH" \
             --title "同步上游 Cyletix/CyIME" \
-            --body "由 Actions 定时创建的上游同步 PR。无冲突可直接 Merge；有冲突需手动解决。" \
-            || echo "PR 创建失败（可能已存在或上游无新提交）"
+            --body "$BODY"
