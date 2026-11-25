@@ -240,6 +240,14 @@ object BackupManager {
         output.use { writeLocalBackup(context, it, includePersonal, clipboard, includePluginConfig) }
     }.onFailure { Log.e(TAG, "exportTo failed", it) }
 
+    /** 生成备份包字节流到内存（用于 WebDAV 上传等）。 */
+    fun backupToBytes(context: Context, includePersonal: Boolean, includeClipboardHistory: Boolean = false, includePluginConfig: Boolean = false): ByteArray {
+        val clipboard = clipboardBackupJson(context, includeClipboardHistory)
+        val out = java.io.ByteArrayOutputStream()
+        writeLocalBackup(context, out, includePersonal, clipboard, includePluginConfig)
+        return out.toByteArray()
+    }
+
     /** 读取用户选择的备份包；不是 CyIME 备份时拒绝，避免把任意 zip 解进 rime 目录。 */
     fun readBackup(context: Context, uri: Uri): Result<ByteArray> = runCatching {
         val bytes = context.contentResolver.openInputStream(uri)?.use { input ->

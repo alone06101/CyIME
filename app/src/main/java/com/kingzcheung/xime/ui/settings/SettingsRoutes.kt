@@ -42,6 +42,7 @@ object SettingsRoutes {
     const val ClipboardGroups = "clipboard_groups"
     const val ClipboardPanel = "clipboard_panel"
     const val Backup = "backup"
+    const val WebDavBackup = "webdav_backup"
     const val RimeFileBrowser = "rime_file_browser"
     const val KeyboardResize = "keyboard_resize"
     const val ToolbarArrange = "toolbar_arrange"

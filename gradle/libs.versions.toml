@@ -17,6 +17,7 @@ composeBom = "2026.06.01"
 lifecycleRuntime = "2.8.7"
 activityCompose = "1.13.0"
 onnxruntimeAndroid = "1.27.0"
+workRuntime = "2.9.1"
 savedstate = "1.4.0"
 navigationCompose = "2.9.8"
 coil = "2.7.0"
@@ -68,6 +69,7 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 exp4j = { group = "net.objecthunter", name = "exp4j", version.ref = "exp4j" }
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntimeAndroid" }
 androidx-autofill = { module = "androidx.autofill:autofill", version = "1.3.0" }
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workRuntime" }
 androidx-room3-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room" }
 androidx-room3-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room" }
 

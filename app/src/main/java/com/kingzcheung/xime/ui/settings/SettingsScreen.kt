@@ -339,7 +339,13 @@ fun SettingsScreen(
             OtherSettingsContent(onBack = { navController.popBackStack() }, onNavigateToRoute = { navController.navigate(it) })
         }
         composable(SettingsRoutes.Backup) {
-            BackupSettingsContent(onBack = { navController.popBackStack() })
+            BackupSettingsContent(
+                onBack = { navController.popBackStack() },
+                onNavigateToWebDav = { navController.navigate(SettingsRoutes.WebDavBackup) }
+            )
+        }
+        composable(SettingsRoutes.WebDavBackup) {
+            WebDavBackupScreen(onBack = { navController.popBackStack() })
         }
         composable(SettingsRoutes.About) {
             AboutContent(

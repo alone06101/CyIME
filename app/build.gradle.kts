@@ -338,6 +338,7 @@ dependencies {
 
     // Navigation
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.work.runtime.ktx)
 
     // Lifecycle
     implementation(libs.androidx.lifecycle.runtime)

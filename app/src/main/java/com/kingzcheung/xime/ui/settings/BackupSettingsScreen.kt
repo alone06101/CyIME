@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.twotone.CloudUpload
 import androidx.compose.material.icons.twotone.ContentPaste
 import androidx.compose.material.icons.twotone.Download
 import androidx.compose.material.icons.twotone.Extension
@@ -54,7 +55,7 @@ import java.util.Locale
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BackupSettingsContent(onBack: () -> Unit) {
+fun BackupSettingsContent(onBack: () -> Unit, onNavigateToWebDav: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // 和其他开关一样记住选择（以前只存在页面状态里，退出再进来就变回关）。
@@ -227,6 +228,13 @@ fun BackupSettingsContent(onBack: () -> Unit) {
                             text = "备份只存到你选的位置，不会上传。",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline
+                        )
+                        SettingsItem(
+                            icon = Icons.TwoTone.CloudUpload,
+                            title = "WebDAV 备份",
+                            subtitle = "备份后上传到云端，支持自动备份",
+                            onClick = onNavigateToWebDav,
+                            showArrow = true
                         )
                         message?.let {
                             Text(
