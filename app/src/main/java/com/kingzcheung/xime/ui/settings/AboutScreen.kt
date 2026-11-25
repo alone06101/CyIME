@@ -291,6 +291,7 @@ fun AboutContent(
                         SettingsItem(
                             icon = Icons.TwoTone.NewReleases,
                             title = "更新内容",
+                            subtitle = "各版本的更新说明",
                             onClick = onNavigateToReleaseNotes,
                             status = if (releaseNotesUnread) "●" else null,
                             statusTone = SettingsStatusTone.WARNING
