@@ -265,7 +265,7 @@ class LuaTranslatePluginTest {
         adapter.onPanelInput("see you tomorrow")
         adapter.onPanelAction("generate")
         assertTrue("英文原文译成界面语言", sse.bodies.last().contains("把下面这段话翻译成简体中文"))
-        assertTrue(adapter.getPanelState("").ui!!.first { it.type == UiNodeType.TEXT }.value!!.contains("简体中文和英文互译"))
+        assertTrue(adapter.getPanelState("").ui!!.first { it.type == UiNodeType.TEXT }.value!!.contains("中英互译"))
         // 指定了原文语言就不互译，照指定的翻
         adapter.onPanelAction("select:sourceLang:英文")
         adapter.onPanelAction("select:targetLang:日文")
