@@ -50,6 +50,8 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
     // 没开的西、德、法、意、俄、韩语默认收在「更多语言」里（用户 11-08：一般人用不着这么多）。
     var moreLanguagesOpen by rememberSaveable { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
+    var wanxiangRelease by remember { mutableStateOf<com.kingzcheung.xime.settings.WanxiangUpdate.Release?>(null) }
+    var wanxiangChecking by remember { mutableStateOf(false) }
     val profilesModel: com.kingzcheung.xime.viewmodel.SchemaSettingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val profilesState by profilesModel.uiState.collectAsState()
     var remembered by remember { mutableStateOf(InputModes.rememberedModes(context)) }
@@ -206,6 +208,16 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
                         "启用、停用和排序输入方案", onClick = onOpenSchemaResources, showArrow = true)
                     SettingsItem(Icons.TwoTone.ViewModule, "双拼方案",
                         "选择双拼方案，或自建方案", onClick = onOpenDoublePinyin, showArrow = true)
+                    SettingsItem(Icons.TwoTone.Download, "检查万象拼音更新",
+                        "从 GitHub 拉取万象拼音最新版", onClick = {
+                            wanxiangChecking = true
+                            scope.launch {
+                                val release = com.kingzcheung.xime.settings.WanxiangUpdate.checkUpdate(context)
+                                wanxiangChecking = false
+                                if (release == null) message = "检查万象拼音更新失败，请稍后重试"
+                                else wanxiangRelease = release
+                            }
+                        }, showArrow = true)
                 }
             }
             // 没写语言的导入方案（声笔等，GitHub #86）：在这里选一次语言，字母布局、语音、手写跟着走。
@@ -248,6 +260,28 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
             }
             item { if (message.isNotEmpty()) Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             item { Spacer(Modifier.height(16.dp)) }
+        }
+
+        wanxiangRelease?.let { release ->
+            val installed = com.kingzcheung.xime.settings.WanxiangUpdate.installedVersion(context)
+            val hasUpdate = installed != release.version
+            AlertDialog(
+                onDismissRequest = { wanxiangRelease = null },
+                title = { Text("万象拼音更新") },
+                text = { Text("当前安装：${installed ?: "未知"}\n最新版本：${release.version}${if (hasUpdate) "（有更新）" else "（已是最新）"}") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        wanxiangRelease = null
+                        wanxiangChecking = true
+                        scope.launch {
+                            val ok = com.kingzcheung.xime.settings.WanxiangUpdate.update(context, release)
+                            wanxiangChecking = false
+                            message = if (ok) "万象拼音已更新到 ${release.version}" else "万象拼音更新失败，请稍后重试"
+                        }
+                    }) { Text(if (hasUpdate) "更新" else "重新下载") }
+                },
+                dismissButton = { TextButton(onClick = { wanxiangRelease = null }) { Text("关闭") } }
+            )
         }
     }
 }
