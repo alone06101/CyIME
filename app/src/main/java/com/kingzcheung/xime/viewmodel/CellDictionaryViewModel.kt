@@ -80,6 +80,45 @@ class CellDictionaryViewModel(application: Application) : AndroidViewModel(appli
         else "已导入「${entry.name}」$total 个词$skipped，点「应用更改」后生效"
     }
 
+    /** 批量导入多个词库文件：逐个导入并更新进度，最后汇总。 */
+    fun importMany(uris: List<Uri>) {
+        if (state.value.busy) return
+        state.update { it.copy(busy = true, message = "正在导入词库…", error = false) }
+        viewModelScope.launch {
+            try {
+                val (counts, dictionaries) = withContext(Dispatchers.IO) {
+                    writes.withLock {
+                        var total = 0; var skipped = 0; var stroke = 0
+                        uris.forEachIndexed { index, uri ->
+                            state.update { it.copy(message = "正在导入第 ${index + 1}/${uris.size} 个词库…") }
+                            val entry = requireNotNull(context.contentResolver.openInputStream(uri)) { "无法打开文件" }
+                                .use(store::installFile)
+                            store.select(entry.id, true)
+                            total += entry.count + entry.english + entry.stroke
+                            skipped += entry.skipped
+                            stroke += entry.stroke
+                        }
+                        Triple(total, skipped, stroke) to store.read()
+                    }
+                }
+                val (total, skipped, stroke) = counts
+                val skippedText = if (skipped > 0) "，跳过 $skipped 行（单字或没有拼音）" else ""
+                val strokeText = if (stroke > 0) "，其中 $stroke 个笔画编码的词只给笔画输入用" else ""
+                state.update {
+                    it.copy(
+                        dictionaries = dictionaries,
+                        message = "已导入 ${uris.size} 个词库，共 $total 个词$skippedText$strokeText，点「应用更改」后生效",
+                        error = false,
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                state.update { it.copy(message = error.message ?: "操作失败，请重试", error = true) }
+            } finally { state.update { it.copy(busy = false) } }
+        }
+    }
+
     /** 导出词库：[source] 为 null 时是当前方案学到的词，否则是这个导入的词库；写进用户选好的 [uri]。 */
     fun export(uri: Uri, source: String?, format: DictionaryExport.Format) = work("正在导出词库…") {
         val (name, words) = if (source == null) "我学到的词" to DictionaryExportSources.userWords(context)

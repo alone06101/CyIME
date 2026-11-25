@@ -41,8 +41,8 @@ fun CellDictionarySettingsContent(onBack: () -> Unit, embedded: Boolean = false)
     val state by model.uiState.collectAsStateWithLifecycle()
     val uriHandler = LocalUriHandler.current
     var linkError by remember { mutableStateOf<String?>(null) }
-    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(model::import)
+    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) model.importMany(uris)
     }
     // 选好导出什么、什么格式后先问存到哪；文件选择器回来再写。
     var pendingExport by remember { mutableStateOf<Pair<String?, DictionaryExport.Format>?>(null) }
