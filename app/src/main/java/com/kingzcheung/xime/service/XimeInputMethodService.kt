@@ -292,7 +292,7 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
             "editorAgeMs=${android.os.SystemClock.uptimeMillis() - editorStartedAt} " +
             "app=${editor?.packageName} inputType=0x${Integer.toHexString(editor?.inputType ?: 0)} " +
             "connection=${currentInputConnection != null} shown=$isInputViewShown"
-    }
+    }.also { com.kingzcheung.xime.stats.TouchStats.dropped(reason) }
     
     internal lateinit var clipboardManager: ClipboardManager
 
@@ -484,7 +484,10 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
     /** 游戏直通生效中：键盘不显示，实体按键不经过 CyIME（见 [HardwareGamePassthrough]）。 */
     private val hardwareGamePassthrough: Boolean get() = HardwareGamePassthrough.active(
         uiState.value.hardwareOptions.gamePassthrough, hasHardwareKeyboard,
-        hardwareGamePackages.isGame(currentInputEditorInfo?.packageName)) && !gameShowExplicit
+        hardwareGamePackages.isGame(currentInputEditorInfo?.packageName),
+        listed = currentInputEditorInfo?.packageName in uiState.value.hardwareOptions.passthroughApps) && !gameShowExplicit
+    /** 最近记下的实体键盘打字应用；换了应用才写一次设置（见 [com.kingzcheung.xime.settings.HardwareKeyboardPreferences.noteLastApp]）。 */
+    private var hardwareLastNotedPackage: String? = null
     /**
      * 游戏直通开着时应用显式要键盘（showSoftInput 带 SHOW_EXPLICIT，如启动器自己的「调用输入法」键，#157）：
      * 这一次照常显示键盘、按键照常经过 CyIME；键盘收起或离开输入框后恢复直通。点输入框的普通请求仍不弹。
@@ -990,6 +993,9 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
     internal val japaneseInputController = JapaneseInputController(this)
 
     internal val textCommit = ImeTextCommit(this)
+
+    /** 数字后面先上半角的 . ,，下一个上屏的不是数字时改成全角（见 [DigitSeparatorGuess]）。主线程读写。 */
+    internal val digitSeparatorGuess = DigitSeparatorGuess()
     
     private val inlineSuggestionManager = if (AndroidPlatform.inlineSuggestions) {
         InlineSuggestionManager(this)
@@ -1165,6 +1171,14 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
                 SettingsPreferences.KEY_CLIPBOARD_SYNC_PLUGIN_ID -> {
                     stopClipboardSync()
                     updateClipboardSync()
+                }
+                // 拉取间隔在建同步时定下，改了就重建；电脑同步不用这两个设置，不必重连。
+                SettingsPreferences.KEY_CLIPBOARD_SYNC_PULL_INTERVAL_S, SettingsPreferences.KEY_CLIPBOARD_SYNC_KEEP_PULLING -> {
+                    if (clipboardSyncBridge != null &&
+                        clipboardSyncBridge?.pluginId != com.kingzcheung.xime.clipboard.sync.WindowsDevices.ID) {
+                        stopClipboardSync()
+                        updateClipboardSync()
+                    }
                 }
             }
         }
@@ -1565,6 +1579,8 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
                 pluginId = selected.first,
                 foregroundPollIntervalMs = if (nativeWindows) 2000 else syncCapabilities?.foregroundPollIntervalMs ?: 0,
                 maxTextBytes = if (nativeWindows) 65536 else syncCapabilities?.maxTextBytes ?: 0,
+                pullIntervalMs = SettingsPreferences.getClipboardSyncPullIntervalS(this) * 1_000L,
+                keepPulling = SettingsPreferences.isClipboardSyncKeepPulling(this),
             )
             clipboardSyncBridge?.start()
             // 电脑同步只在键盘显示时找电脑、查连接：键盘正显示时下一行立刻连上，收起时不在后台跑。
@@ -3515,6 +3531,7 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
     }
     private var clipboardRestoreCompact = false
     private var microphoneRestoreCompact = false
+    private var symbolRestoreCompact = false
     private val clipboardNavigationKeys = mutableSetOf<Int>()
     private val hardwareCandidateNavigationKeys = mutableSetOf<Int>()
     /** Shift 加数字或空格已用来选候选（上屏英文）的键，松开时一并吞掉。 */
@@ -3539,6 +3556,17 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
                     clipboardRestoreCompact = uiState.value.isCompact
                     clipboardKeyboard.open()
                     showScreenKeyboardFromHardware(OverlayRoute.Clipboard())
+                }
+            }
+            HardwareToolShortcut.SYMBOL -> {
+                // 再按一次 SYM 收起；打开前是浮条就回到浮条。
+                if ((keyboardViewModel.page.value as? KeyboardPage.Overlay)?.route is OverlayRoute.Symbol) {
+                    keyboardViewModel.closeOverlay()
+                    if (symbolRestoreCompact) collapseScreenKeyboardToHardwareToolbar()
+                    symbolRestoreCompact = false
+                } else {
+                    symbolRestoreCompact = uiState.value.isCompact
+                    showScreenKeyboardFromHardware(OverlayRoute.Symbol)
                 }
             }
             HardwareToolShortcut.MICROPHONE -> {
@@ -3617,6 +3645,13 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
             return if (event?.isSystem == true) super.onKeyDown(keyCode, event) else true
         }
         if (hardwareGamePassthrough) return super.onKeyDown(keyCode, event)
+        // 记下用实体键盘打字的应用，设置 › 物理键盘 里给这个应用单独开直通（#265）。
+        if (hasHardwareKeyboard && event != null && event.deviceId != android.view.KeyCharacterMap.VIRTUAL_KEYBOARD) {
+            currentInputEditorInfo?.packageName?.takeIf { it != packageName && it != hardwareLastNotedPackage }?.let {
+                hardwareLastNotedPackage = it
+                com.kingzcheung.xime.settings.HardwareKeyboardPreferences.noteLastApp(this, it)
+            }
+        }
         event?.let { hardwareCapsLockState.value = it.isCapsLockOn }
         if (hasHardwareKeyboard) event?.let { feedbackManager.playHardwareKeySound(it) }
         if (uiState.value.showQuickSendForm && keyCode in listOf(KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER)) {
@@ -3997,6 +4032,7 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         endGlidePreview()
         super.onStartInput(attribute, restarting)
+        digitSeparatorGuess.reset()
         editorStartedAt = android.os.SystemClock.uptimeMillis()
         val preview = KeyboardPanelLaunch.isPreview(attribute, packageName)
         val requestedTool = if (preview) KeyboardPanelLaunch.editorPanel(attribute) else null
@@ -4058,6 +4094,7 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
         com.kingzcheung.xime.gloss.CandidateGlossary.t9NextHeld.value = false
         clipboardRestoreCompact = false
         microphoneRestoreCompact = false
+        symbolRestoreCompact = false
         uiState.value = uiState.value.copy(hardwareOptions = com.kingzcheung.xime.settings.HardwareKeyboardPreferences.read(this))
         // A hardware keyboard can switch editors without starting the soft input view.
         // Never keep the previous editor's position while waiting for this connection.
@@ -6162,6 +6199,10 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
             return TextCommitResult.ACCEPTED_INTERNAL
         }
         val connection = currentInputConnection ?: return TextCommitResult.NO_CONNECTION
+        // 数字后面先上的半角 . ,：接着上屏的不是数字就先改成全角 。，；同一个键再点一次只改不加（11-25）。
+        if (isPaste) digitSeparatorGuess.reset()
+        else if (digitSeparatorGuess.beforeCommit(connection, delivered, android.os.SystemClock.uptimeMillis()))
+            return TextCommitResult.ACCEPTED_HOST
         val committed = when {
             caret != CommitCaret.NONE -> connection.commitTextWithCaret(delivered, caret)
             // 多行短语一行一行上屏（见 commitPhraseLines）。
@@ -6176,6 +6217,12 @@ class XimeInputMethodService : InputMethodService(), LifecycleOwner, SavedStateR
             com.kingzcheung.xime.stats.TypingStats.onCommit(delivered, isPaste, source, softKeyboard = !hasHardwareKeyboard,
                 combo = typingStatsCombo(source, !hasHardwareKeyboard))
         }
+        // 英文记忆（11-25 他：英文直出、九键、14 键里打的 Abc123 也要记住）：一个不是字母的字上屏后看它前面的词，
+        // 带数字或中间有大写的记进 cyime_en_memory.txt，雾凇 26 键、英文单词方案里打开头就补全。
+        if (!isPaste && delivered.length == 1 && !delivered[0].isLetter() && !com.kingzcheung.xime.settings.IncognitoState.active)
+            runCatching { connection.getTextBeforeCursor(64, 0)?.toString() }.getOrNull()
+                ?.takeIf { it.endsWith(delivered) }
+                ?.let { com.kingzcheung.xime.settings.EnglishWordMemory.rememberTyped(SchemaManager.getRimeDir(this), it) }
         if (isChineseMode) {
             val before = runCatching { connection.getTextBeforeCursor(25, 0)?.toString() }.getOrNull()
             // 有的宿主（抖音直播间评论框等）上屏后马上问，回的是空串或上屏前的旧文字：拿它当联想上下文就没有联想。

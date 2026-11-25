@@ -301,9 +301,15 @@ private fun T9KeyboardSwipeOverlay(
                         // 同一笔的其他词（#214）：先登记，打入后整个组合（前面已有的 + 这一笔）出现时候选栏在首选之后给出。
                         callbacks.onT9GlideAlternatives?.invoke(before + digits,
                             glide?.alternatives.orEmpty().takeIf { glide?.digits == digits }.orEmpty())
+                        var typedIntoEngine = true
                         for (digit in digits) {
                             val key = digit.toString()
-                            if (callbacks.onPreeditKeyInput?.invoke(key) != true) controller.onDigitPressed(key)
+                            if (callbacks.onPreeditKeyInput?.invoke(key) == true) typedIntoEngine = false
+                            else controller.onDigitPressed(key)
+                        }
+                        // 同一笔的其他读音进左栏（#582）；改的是编码中间时不给。
+                        if (typedIntoEngine && glide != null && glide.digits == digits) {
+                            controller.offerGlideLine(digits, glide.codes, doublePinyin)
                         }
                     }
                 }
@@ -448,7 +454,7 @@ private fun T9KeyboardContent(
         { letter: Char -> action(GestureAction.COMMAND, com.kingzcheung.xime.keyboard.CtrlShortcuts.command(letter)) }
     }
 
-    fun swipesFor(id: String): T9KeySwipes {
+    fun configSwipesFor(id: String): T9KeySwipes {
         // 读一次版本号：手势配置热重载时本层重组。以前靠每次按键顺带重组才更新。
         if (configVersion < 0) return T9KeySwipes()
         val gesture = KeysConfigHelper.getT9KeyGesture(id) ?: return T9KeySwipes()
@@ -477,6 +483,12 @@ private fun T9KeyboardContent(
                 gesture.swipeDown?.display != DisplayMode.BUBBLE) downHint else null,
         )
     }
+
+    // 设置 › 九键手势 里给数字键设的动作（#297），盖过 xime.yaml 里下方角标那一滑。
+    val t9SwipeBindings = LocalKeyboardInputPreferences.current.t9Swipes
+    val t9SwipeAction = LocalKeyboardInputActions.current.onLetterSwipeAction
+    fun swipesFor(id: String): T9KeySwipes = configSwipesFor(id)
+        .withLowerAction(t9SwipeBindings["$id.lower"], swipeHints.down && hintsActive, t9SwipeAction)
 
     // 九键字母跟「键帽字母大小写」走，和 26/14 键同一条规则（用户 11-05：选小写九键仍是 ABC）。只改显示。
     val upperLetters = letterLabelsUppercase(LocalKeyboardInputPreferences.current, uiState.isAsciiMode, uiState.inputProfile)
@@ -588,6 +600,7 @@ private fun T9KeyboardContent(
                             isSelected = isSelected,
                             approximate = option?.near == true,
                             fitWidth = option != null,
+                            fitTo = if (showCandidates) displayItems else emptyList(),
                             modifier = Modifier.fillMaxWidth().height(metrics.rowHeightDp.dp)
                                 .testTag("t9-pinyin-option:$index")
                         )
@@ -633,7 +646,7 @@ private fun T9KeyboardContent(
                 )
                 T9DigitKey(
                     swipes = swipesFor("2"),
-                    digit = "2", letters = "ABC", longPressItems = listOf("A", "B", "C"), uppercaseLetters = upperLetters,
+                    digit = "2", letters = "ABC", longPressItems = listOf("A", "B", "C"), uppercaseLetters = upperLetters, onCommitDirect = commitDirect,
                     onClick = { if (callbacks.onPreeditKeyInput?.invoke("2") != true) controller.onDigitPressed("2") },
                     onLongPressSelect = { letter -> if (callbacks.onPreeditKeyInput?.invoke(letter) != true && !controller.onLetterFlicked(letter)) onKeyPress(letter) },
                     onSwipeStateChange = onSwipeStateChange,
@@ -645,7 +658,7 @@ private fun T9KeyboardContent(
                 )
                 T9DigitKey(
                     swipes = swipesFor("3"),
-                    digit = "3", letters = "DEF", longPressItems = listOf("D", "E", "F"), uppercaseLetters = upperLetters,
+                    digit = "3", letters = "DEF", longPressItems = listOf("D", "E", "F"), uppercaseLetters = upperLetters, onCommitDirect = commitDirect,
                     onClick = { if (callbacks.onPreeditKeyInput?.invoke("3") != true) controller.onDigitPressed("3") },
                     onLongPressSelect = { letter -> if (callbacks.onPreeditKeyInput?.invoke(letter) != true && !controller.onLetterFlicked(letter)) onKeyPress(letter) },
                     onSwipeStateChange = onSwipeStateChange,
@@ -661,7 +674,7 @@ private fun T9KeyboardContent(
             ) {
                 T9DigitKey(
                     swipes = swipesFor("4"),
-                    digit = "4", letters = "GHI", longPressItems = listOf("G", "H", "I"), uppercaseLetters = upperLetters,
+                    digit = "4", letters = "GHI", longPressItems = listOf("G", "H", "I"), uppercaseLetters = upperLetters, onCommitDirect = commitDirect,
                     onClick = { if (callbacks.onPreeditKeyInput?.invoke("4") != true) controller.onDigitPressed("4") },
                     onLongPressSelect = { letter -> if (callbacks.onPreeditKeyInput?.invoke(letter) != true && !controller.onLetterFlicked(letter)) onKeyPress(letter) },
                     onSwipeStateChange = onSwipeStateChange,
@@ -673,7 +686,7 @@ private fun T9KeyboardContent(
                 )
                 T9DigitKey(
                     swipes = swipesFor("5"),
-                    digit = "5", letters = "JKL", longPressItems = listOf("J", "K", "L"), uppercaseLetters = upperLetters,
+                    digit = "5", letters = "JKL", longPressItems = listOf("J", "K", "L"), uppercaseLetters = upperLetters, onCommitDirect = commitDirect,
                     onClick = { if (callbacks.onPreeditKeyInput?.invoke("5") != true) controller.onDigitPressed("5") },
                     onLongPressSelect = { letter -> if (callbacks.onPreeditKeyInput?.invoke(letter) != true && !controller.onLetterFlicked(letter)) onKeyPress(letter) },
                     onSwipeStateChange = onSwipeStateChange,
@@ -685,7 +698,7 @@ private fun T9KeyboardContent(
                 )
                 T9DigitKey(
                     swipes = swipesFor("6"),
-                    digit = "6", letters = "MNO", longPressItems = listOf("M", "N", "O"), uppercaseLetters = upperLetters,
+                    digit = "6", letters = "MNO", longPressItems = listOf("M", "N", "O"), uppercaseLetters = upperLetters, onCommitDirect = commitDirect,
                     onClick = { if (callbacks.onPreeditKeyInput?.invoke("6") != true) controller.onDigitPressed("6") },
                     onLongPressSelect = { letter -> if (callbacks.onPreeditKeyInput?.invoke(letter) != true && !controller.onLetterFlicked(letter)) onKeyPress(letter) },
                     onSwipeStateChange = onSwipeStateChange,
@@ -701,7 +714,7 @@ private fun T9KeyboardContent(
             ) {
                 T9DigitKey(
                     swipes = swipesFor("7"),
-                    digit = "7", letters = "PQRS", longPressItems = listOf("P", "Q", "R", "S"), uppercaseLetters = upperLetters,
+                    digit = "7", letters = "PQRS", longPressItems = listOf("P", "Q", "R", "S"), uppercaseLetters = upperLetters, onCommitDirect = commitDirect,
                     onClick = { if (callbacks.onPreeditKeyInput?.invoke("7") != true) controller.onDigitPressed("7") },
                     onLongPressSelect = { letter -> if (callbacks.onPreeditKeyInput?.invoke(letter) != true && !controller.onLetterFlicked(letter)) onKeyPress(letter) },
                     onSwipeStateChange = onSwipeStateChange,
@@ -713,7 +726,7 @@ private fun T9KeyboardContent(
                 )
                 T9DigitKey(
                     swipes = swipesFor("8"),
-                    digit = "8", letters = "TUV", longPressItems = listOf("T", "U", "V"), uppercaseLetters = upperLetters,
+                    digit = "8", letters = "TUV", longPressItems = listOf("T", "U", "V"), uppercaseLetters = upperLetters, onCommitDirect = commitDirect,
                     onClick = { if (callbacks.onPreeditKeyInput?.invoke("8") != true) controller.onDigitPressed("8") },
                     onLongPressSelect = { letter -> if (callbacks.onPreeditKeyInput?.invoke(letter) != true && !controller.onLetterFlicked(letter)) onKeyPress(letter) },
                     onSwipeStateChange = onSwipeStateChange,
@@ -725,7 +738,7 @@ private fun T9KeyboardContent(
                 )
                 T9DigitKey(
                     swipes = swipesFor("9"),
-                    digit = "9", letters = "WXYZ", longPressItems = listOf("W", "X", "Y", "Z"), uppercaseLetters = upperLetters,
+                    digit = "9", letters = "WXYZ", longPressItems = listOf("W", "X", "Y", "Z"), uppercaseLetters = upperLetters, onCommitDirect = commitDirect,
                     onClick = { if (callbacks.onPreeditKeyInput?.invoke("9") != true) controller.onDigitPressed("9") },
                     onLongPressSelect = { letter -> if (callbacks.onPreeditKeyInput?.invoke(letter) != true && !controller.onLetterFlicked(letter)) onKeyPress(letter) },
                     onSwipeStateChange = onSwipeStateChange,
@@ -755,6 +768,11 @@ private fun T9KeyboardContent(
                     schemaName = "拼音", isSttEnabled = uiState.isSttEnabled,
                     voiceSticky = uiState.voiceSticky,
                     onSwipeUp = if (spaceUpZero && !typing) ({ commitDirect("0") }) else null,
+                    // 开着就一直写 0 角标（打字时上滑不接，角标照旧在，和别的键角标一样不随状态闪）。
+                    cornerLabel = if (spaceUpZero) "0" else null,
+                    // 方向和数字键的上角标一样（11-25 他）：底排跟「底排标点固定上滑」，开着就上滑；关着跟「反转上下滑方向」，
+                    // 没反转时上角标是下拉出来的。
+                    swipeDownward = LocalKeyboardInputPreferences.current.let { !it.bottomPunctuationSwipeUp && !it.reverseSymbolSwipe },
                     onKeyPress = onKeyPress, onKeyPressDown = onKeyPressDown,
                     onVoiceModeChange = callbacks.onVoiceModeChange,
                     backgroundColor = keyBackgroundColor, textColor = keyTextColor,
@@ -914,6 +932,10 @@ private fun T9KeyboardContent(
                 shadowEnabled = shadowEnabled,
                 shadowElevation = shadowElevation,
                 shadowShapeRadius = shadowShapeRadius,
+                // 「回车发送」时长按换行（#169），和 26 键同一条 Shift+回车。
+                onLongClick = enterLongPressNewline(uiState.enterKeyText, onGestureAction?.let { action ->
+                    { if (!ctrlTargets.ctrlEnter()) action(GestureAction.COMMAND, com.kingzcheung.xime.keyboard.CtrlShortcuts.SHIFT_ENTER_COMMAND) }
+                }),
             )
         }
     }
@@ -975,6 +997,17 @@ internal data class T9KeySwipes(
 )
 
 /**
+ * 用户给这个数字键下方角标那一滑设的动作（#297）：换掉配置里的下方角标，键面写动作名，滑动执行动作。
+ * 没设或没有执行入口时原样返回。
+ */
+internal fun T9KeySwipes.withLowerAction(action: String?, showKeyLabel: Boolean, execute: ((String) -> Unit)?): T9KeySwipes {
+    if (action == null || execute == null) return this
+    val label = com.kingzcheung.xime.settings.LetterSwipeBindings.label(action) ?: return this
+    return copy(symbolInputDownText = null, onSwipeDown = { execute(action) }, swipeDownText = label,
+        swipeDownKeyLabel = if (showKeyLabel) label else null)
+}
+
+/**
  * 九键数字键，复用 [SwipeableKeyButton] 的长按弹出逻辑。
  * - 主体显示字母（ABC），右上角叠加数字浮标。
  * - 点按走 [onClick]，长按走 [onLongPressSelect]，上/下滑走 [onSwipeUp]/[onSwipeDown]。
@@ -998,15 +1031,26 @@ internal fun T9DigitKey(
     swipes: T9KeySwipes = T9KeySwipes(),
     /** 键帽字母大写还是小写（[letterLabelsUppercase]）；长按、拂动送出的仍是 [longPressItems] 原值。 */
     uppercaseLetters: Boolean = true,
+    /** 直接上屏（不进拼音）：长按弹出排里选数字、大写字母时用。 */
+    onCommitDirect: ((String) -> Unit)? = null,
 ) {
     val currentOnClick by rememberUpdatedState(onClick)
     val shownItems = remember(longPressItems, uppercaseLetters) { t9LetterLabels(longPressItems, uppercaseLetters) }
     val itemValue = remember(longPressItems, shownItems) { { shown: String -> longPressItems.getOrNull(shownItems.indexOf(shown)) ?: shown } }
-    // 长按气泡里的字母一律小写：选了是进拼音（编码条里是小写 k、出 k 开头的词），不跟键帽大写。
-    // 26 键的长按气泡里大写是直接上屏大写字母，九键这里写大写 K 却出「看/快/开」，对不上（用户 11-23）。
-    val menuItems = remember(longPressItems) { t9LongPressMenuLetters(longPressItems) }
-    val menuValue = remember(longPressItems, menuItems) { { shown: String -> longPressItems.getOrNull(menuItems.indexOf(shown)) ?: shown } }
     val currentOnLongPressSelect by rememberUpdatedState(onLongPressSelect)
+    // 长按弹出一排「J K L 5 j k l」（11-24 他给的参照图）：数字在中间、默认选中，松手上屏数字；
+    // 大写直接上屏大写字母（同 26 键长按气泡）；小写只把这个字母加进拼音（编码条里是小写 k，出 k 开头的词）。
+    val menuItems = remember(longPressItems, digit) { t9LongPressMenu(longPressItems, digit) }
+    val lowerLetters = remember(longPressItems) { t9LongPressMenuLetters(longPressItems) }
+    val currentOnCommitDirect by rememberUpdatedState(onCommitDirect)
+    val pickMenuItem: (String) -> Unit = { shown ->
+        val lowerIndex = lowerLetters.indexOf(shown)
+        when {
+            shown == digit -> currentOnCommitDirect?.invoke(digit)
+            lowerIndex >= 0 -> currentOnLongPressSelect?.invoke(longPressItems[lowerIndex])
+            else -> currentOnCommitDirect?.invoke(shown)
+        }
+    }
     val currentOnPress by rememberUpdatedState(onPress)
     val currentSwipes by rememberUpdatedState(swipes)
     val inputPreferences = LocalKeyboardInputPreferences.current
@@ -1025,10 +1069,13 @@ internal fun T9DigitKey(
             glideKeys[digit.single()] = dragSpace.bounds(it)
         },
         onPress = { currentOnPress?.invoke() },
-        // 长按弹字母气泡和 26/14 键共用“长按弹出字母气泡”开关，默认关（用户 10-21）；拂动模式长按出数字，不受影响。
-        // 拂动模式下长按出的是数字，这里的列表用不上；只有「长按弹出字母气泡」走这份小写列表。
+        // 九键长按跟设置里三张卡走（11-24 长按方案）：「滑动＋字母气泡」才弹「大写 数字 小写」这一排，
+        // 「长按输入」长按出数字（withSymbolInput），「滑动输入」长按没反应。拂动模式长按出数字，不受影响。
         longPressItems = if (flick) shownItems else if (inputPreferences.letterLongPressMenu) menuItems else emptyList(),
-        onLongPressSelect = { letter -> currentOnLongPressSelect?.invoke(if (flick) itemValue(letter) else menuValue(letter)) },
+        longPressCenterItems = if (flick) emptyList() else listOf(digit),
+        // 照参照图数字居中、大写在左、小写在右，不按左右半边翻转。
+        longPressFixedOrder = !flick,
+        onLongPressSelect = { item -> if (flick) currentOnLongPressSelect?.invoke(itemValue(item)) else pickMenuItem(item) },
         // Four-letter keys: P/S on the left/right, Q/R up/down (user layout, 2026-10-18); three letters go left/up/right.
         flickLetters = if (!flick) null else if (shownItems.size == 4)
             listOf(shownItems[0], shownItems[1], shownItems[3], shownItems[2]) else shownItems,
@@ -1063,6 +1110,10 @@ internal fun t9LetterLabels(items: List<String>, uppercase: Boolean): List<Strin
 /** 九键长按气泡里的字母：一律小写，写的就是进拼音的那个字母；送出的仍是原值。 */
 internal fun t9LongPressMenuLetters(items: List<String>): List<String> = t9LetterLabels(items, uppercase = false)
 
+/** 九键长按弹出的一排：大写字母、数字、小写字母，如「J K L 5 j k l」（11-24 参照图）。 */
+internal fun t9LongPressMenu(items: List<String>, digit: String): List<String> =
+    t9LetterLabels(items, uppercase = true) + digit + t9LongPressMenuLetters(items)
+
 // ─── 子组件 ───────────────────────────────────────────────────────────
 
 @Composable
@@ -1081,6 +1132,8 @@ internal fun T9CandidateItem(
     approximate: Boolean = false,
     /** 字太宽时缩到放得下（读音一律缩，保证完整显示）；符号列表不缩，照旧。 */
     fitWidth: Boolean = false,
+    /** 同一栏的全部读音，整栏按最宽的一个用同一个字号（见 [FittedRailText]）。 */
+    fitTo: List<String> = emptyList(),
 ) {
     var isPressed by remember { mutableStateOf(false) }
     val currentOnClick by rememberUpdatedState(onClick)
@@ -1106,7 +1159,8 @@ internal fun T9CandidateItem(
         contentAlignment = Alignment.Center
     ) {
         val shown = if (preserveWidth) text else punctuationKeyLabel(text)
-        val available = maxWidth - if (isSelected) 12.dp else 6.dp
+        // 选中、没选中按同一个宽度缩（选中的高亮框左右各占 3dp），点一下读音不再变小一号。
+        val available = maxWidth - 12.dp
         val modifierWithMeaning = if (approximate) Modifier.semantics { contentDescription = "相近读音 $text" } else Modifier
         if (isSelected) {
             Box(
@@ -1116,11 +1170,11 @@ internal fun T9CandidateItem(
                     .padding(horizontal = 3.dp, vertical = 1.dp)
             ) {
                 FittedRailText(shown, accentColor, fontSize, FontWeight.Medium, approximate,
-                    if (fitWidth) available else null)
+                    if (fitWidth) available else null, fitTo = fitTo)
             }
         } else {
             FittedRailText(shown, if (approximate) approximateRailColor(textColor) else textColor, fontSize,
-                FontWeight.Normal, approximate, if (fitWidth) available else null, modifierWithMeaning)
+                FontWeight.Normal, approximate, if (fitWidth) available else null, modifierWithMeaning, fitTo = fitTo)
         }
     }
 }
@@ -1141,10 +1195,22 @@ internal fun FittedRailText(
     approximate: Boolean,
     maxWidth: Dp?,
     modifier: Modifier = Modifier,
+    /**
+     * 同一栏的全部读音：给了就按其中最宽的一个缩，整栏一个字号（11-24 群里反馈：展开候选里的音节忽大忽小——
+     * 原来每个各自缩，zhuang 比 a 小，点中一个又因为高亮框窄了一点再缩一次）。
+     */
+    fitTo: List<String> = emptyList(),
 ) {
     val style = TextStyle(fontSize = fontSize, fontFamily = AppFonts.candidateFontFamily, fontWeight = fontWeight)
     val fitted = if (maxWidth == null) fontSize else {
-        val measured = rememberTextMeasurer().measure(text, style = style, maxLines = 1, softWrap = false).size.width
+        val measurer = rememberTextMeasurer()
+        // 按加粗（选中时的字重）量，选中、没选中同一个字号。
+        val measureStyle = style.copy(fontWeight = FontWeight.Medium)
+        val measured = remember(text, fitTo, measureStyle) {
+            fitTo.ifEmpty { listOf(text) }.maxOf {
+                measurer.measure(it, style = measureStyle, maxLines = 1, softWrap = false).size.width
+            }
+        }
         val usable = with(LocalDensity.current) { maxWidth.toPx() }.coerceAtLeast(1f)
         fontSize * minOf(1f, usable / measured.coerceAtLeast(1))
     }
@@ -1347,6 +1413,8 @@ private fun T9SpaceKey(
     shadowElevation: Dp = 1.dp,
     shadowShapeRadius: Dp = 8.dp,
     onSwipeUp: (() -> Unit)? = null,
+    cornerLabel: String? = null,
+    swipeDownward: Boolean = false,
 ) {
 
     SpaceKeyButton(onClick = { onKeyPress("space") }, backgroundColor = backgroundColor,
@@ -1354,5 +1422,6 @@ private fun T9SpaceKey(
         onPress = { onKeyPressDown?.invoke("space") }, voiceSticky = voiceSticky,
         isSttEnabled = isSttEnabled, onVoiceModeChange = onVoiceModeChange,
         shadowEnabled = shadowEnabled, shadowElevation = shadowElevation, shadowShapeRadius = shadowShapeRadius,
-        onSwipeUp = onSwipeUp, swipeUpLabel = if (onSwipeUp != null) "0" else null)
+        onSwipeUp = onSwipeUp, swipeUpLabel = if (onSwipeUp != null) "0" else null, cornerLabel = cornerLabel,
+        swipeDownward = swipeDownward)
 }

@@ -161,6 +161,15 @@ internal fun usesT9DragReselect(profile: com.kingzcheung.xime.settings.InputProf
         profile.layout.kind == com.kingzcheung.xime.settings.LayoutKind.T9
 
 /**
+ * 首选上拖选改局部默认开（11-24 他：「默认打开 你只能在6个字以上生效」），只给超过 6 个字的长句：短句长按要能调词频、删词、固定位置，
+ * 所以开关关着或首选不到 [SENTENCE_DRAG_MIN_CHARS] 个字时不接拖选，长按照旧出调词频的卡片，卡片里照旧拆词重选。
+ */
+internal const val SENTENCE_DRAG_MIN_CHARS = 7
+
+internal fun sentenceDragApplies(firstCandidate: String?, enabled: Boolean): Boolean =
+    enabled && (firstCandidate?.length ?: 0) >= SENTENCE_DRAG_MIN_CHARS
+
+/**
  * 拖选改局部时按下的键接到编码后面的样子；不是编码键时为 null。26 键是小写字母；内置 14 键的合并键（qw）
  * 换成大写代表字母（Q），同打字时送给引擎的一样，l、m 和点选的单个字母照旧小写。
  */
@@ -408,6 +417,8 @@ fun KeyboardView(
     // 单独一层后根只录一句「画这一层」，这层本身不动就不重录。不改样子：没有透明度、不离屏。
     val motionIsolation = if (backgroundMotion != null) Modifier.graphicsLayer() else Modifier
     val contentModifier = if (state.handwritingExpanded) previewModifier else motionIsolation.then(previewModifier)
+    // 背景单独一段：悬浮时在卡片里往下画到拖动条底（bleedBottomOut/In），整张卡片一张图。
+    val contentPaint = if (state.handwritingExpanded) null else Modifier
         .keyboardBackground(themeScheme.keyboardBackground, state.isDarkTheme, keyboardBgColor,
             imageSlot = backgroundImageSlot)
         .splitGapCutout(splitKeyboardGap)
@@ -610,6 +621,9 @@ fun KeyboardView(
         contentHeightDp = state.keyboardHeightDp + clipboardSearchExtraHeight(
             state.isFloatingMode && state.clipboardSearchVisible, state.clipboardSearchResultsHeight,
             state.clipboardSearchInline) + state.preeditStripDp,
+        temporaryExtraHeightDp = clipboardSearchExtraHeight(
+            state.isFloatingMode && state.clipboardSearchVisible, state.clipboardSearchResultsHeight,
+            state.clipboardSearchInline) + state.preeditStripDp,
         bottomContentPaddingDp = renderedBottomPaddingDp,
         bottomKeyClearance = floatingBottomClearance,
         fixedWidthDp = state.fixedWidthDp,
@@ -673,7 +687,12 @@ fun KeyboardView(
         }
         // 候选栏上面那一截的高度（翻译栏、工具面板、剪贴板搜索、拼音编辑条）；菜单等面板据此让开工具栏，见 belowCandidateBar。
         val aboveCandidateBarPx = remember { mutableIntStateOf(0) }
-        Box(modifier = Modifier.fillMaxSize().then(contentModifier).inlineQuickActionGestures(inlineEditor).onSizeChanged { size ->
+        val backgroundBleed = LocalFloatingBackgroundBleed.current?.takeIf { state.isFloatingMode }
+        val bleedPx = if (contentPaint != null) backgroundBleed?.px ?: 0 else 0
+        SideEffect { backgroundBleed?.consumed = contentPaint != null }
+        Box(modifier = Modifier.fillMaxSize().then(contentModifier)
+            .then(if (contentPaint == null) Modifier else Modifier.bleedBottomOut(bleedPx).then(contentPaint).bleedBottomIn(bleedPx))
+            .inlineQuickActionGestures(inlineEditor).onSizeChanged { size ->
             if (!barScaleFrozen && size.width > 0 && size.height > 0) {
                 candidateBarScaleState.floatValue = candidateBarScale(size.width / resizeControlDensity.density,
                     size.height / resizeControlDensity.density - renderedBottomPaddingDp)
@@ -681,7 +700,7 @@ fun KeyboardView(
         }) {
         if (backgroundMotion != null && backgroundImageSlot != null) {
             KeyboardBackgroundMotionLayer(backgroundImageSlot, backgroundMotion, splitKeyboardGap,
-                glass = inputPreferences.frostedGlass.enabled)
+                glass = inputPreferences.frostedGlass.enabled, bleedPx = bleedPx)
         }
         // 长按候选删除自造词：确认覆盖层状态（键盘视图内渲染，不弹独立
         // 窗口——焦点型弹窗会抢焦点导致 IME 被系统收起）
@@ -1538,6 +1557,8 @@ fun KeyboardView(
                 }
             }
             val correctionMarks = if (correctionVisible) allCorrectionMarks else emptyMap()
+            // 贴边拼音的纠正读音可以关（#586）：关掉时照打的字母显示，和气泡一样。
+            val lineCorrected = rememberPreeditLineCorrected()
             // 「拼音显示声调」：双拼显示按键时拼音是按键不是拼法，不标。
             val preeditToneData = rememberPreeditToneData(inputPreferences.preeditTones &&
                 !(correctionScheme != null && doublePinyinKeysShown))
@@ -1546,7 +1567,7 @@ fun KeyboardView(
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalLearnedCandidates provides if (learnedMarkVisible) cs.learnedCandidates else emptySet(),
                 LocalCorrectedCandidates provides correctionMarks,
-                LocalPreeditLineCorrections provides allCorrectionMarks,
+                LocalPreeditLineCorrections provides if (lineCorrected) allCorrectionMarks else emptyMap(),
                 LocalPreeditToneData provides preeditToneData,
                 // 笔画方案的编码在组字区里自己画（11-23）。
                 LocalStrokeGlyphDrawing provides (!state.isAsciiMode &&
@@ -1683,7 +1704,7 @@ fun KeyboardView(
                                 com.kingzcheung.xime.handwriting.HandwritingTemplates.forget(handwritingContext, handwritingWord)
                             }
                         } else if (!word.isNullOrEmpty()) {
-                            val parts = sentenceParts(callbacks, cs, word, first = (railEntry?.first ?: index) == 0, state.inputProfile)
+                            val parts = sentenceParts(callbacks, cs, word, first = (railEntry?.first ?: index) == 0, state.inputProfile, inputPreferences.sentenceDragEdit)
                             deletePending = DeletePendingWord(word, pin = pinChoice(callbacks, cs, word), parts = parts) {
                                 if (!callbacks.isCandidateSnapshotCurrent(cs)) return@DeletePendingWord
                                 if (railEntry != null) {
@@ -1698,7 +1719,7 @@ fun KeyboardView(
                     onSentenceSelectionEnd = ::endSentenceDrag,
                     onSentenceSelection = if (sentenceEdit == null && !showHandwritingCandidates && !glossSwap &&
                         !state.isAsciiMode && usesSentenceDragEdit(state.inputProfile) &&
-                        !expandedDataMode && (cs.candidates.firstOrNull()?.length ?: 0) >= 2) { start, end ->
+                        !expandedDataMode && sentenceDragApplies(cs.candidates.firstOrNull(), inputPreferences.sentenceDragEdit)) { start, end ->
                         callbacks.onOpenSentenceEdit?.invoke(start, end, cs.engineRevision) { owner ->
                             if (owner != null && callbacks.isCandidateSnapshotCurrent(cs)) {
                                 closePreeditEditor()
@@ -1717,7 +1738,7 @@ fun KeyboardView(
                         }
                     } else if (sentenceEdit == null && !showHandwritingCandidates && !glossSwap && !state.isAsciiMode &&
                         usesT9DragReselect(state.inputProfile) && callbacks.onReselectSentenceRange != null &&
-                        !expandedDataMode && (cs.candidates.firstOrNull()?.length ?: 0) >= 2) { start, end ->
+                        !expandedDataMode && sentenceDragApplies(cs.candidates.firstOrNull(), inputPreferences.sentenceDragEdit)) { start, end ->
                         val sentence = cs.candidates.firstOrNull()
                         if (sentence != null && callbacks.isCandidateSnapshotCurrent(cs))
                             callbacks.onReselectSentenceRange?.invoke(sentence, start, end)
@@ -1947,7 +1968,7 @@ fun KeyboardView(
                                 .getOrNull(entry.globalIndex)?.text
                             if (!word.isNullOrEmpty()) {
                                 onHapticFeedback?.invoke()
-                                val parts = sentenceParts(callbacks, cs, word, first = entry.globalIndex == 0, state.inputProfile)
+                                val parts = sentenceParts(callbacks, cs, word, first = entry.globalIndex == 0, state.inputProfile, inputPreferences.sentenceDragEdit)
                                 deletePending = DeletePendingWord(word, pin = pinChoice(callbacks, cs, word), parts = parts) {
                                     if (!callbacks.isCandidateSnapshotCurrent(cs)) return@DeletePendingWord
                                     callbacks.onGlobalCandidateDelete?.invoke(entry.globalIndex)
@@ -2842,7 +2863,8 @@ fun KeyboardView(
             density = resizeControlDensity,
             aspectLimits = KeyboardAspectLimits.forLayout(state.inputProfile.layout.kind, splitActive, splitGapFraction),
             squareSnap = KeyboardSquareSnap.forLayout(state.inputProfile.layout.kind, splitActive, splitGapFraction,
-                inputPreferences.wideKeys, numberRow = inputPreferences.numberRow)
+                inputPreferences.wideKeys, numberRow = inputPreferences.numberRow,
+                numberRowFullHeight = inputPreferences.numberRowFullHeight)
                 ?.copy(candidateZoom = candidateTextZoom(rememberCandidateTextSize())),
             splitGapFraction = splitGapSetting,
             splitPitchDp = splitPitchDp,
@@ -3144,9 +3166,10 @@ private class SentenceParts(val words: List<String>, val reselect: (Int) -> Unit
  * 26 键全拼和双拼用首选上的拖选改局部（PR #363），不再出拆词；其它方案还没有拖选，照旧出拆词。
  */
 private fun sentenceParts(callbacks: KeyboardCallbacks, cs: com.kingzcheung.xime.service.CandidateState,
-    word: String, first: Boolean, profile: com.kingzcheung.xime.settings.InputProfile): SentenceParts? {
+    word: String, first: Boolean, profile: com.kingzcheung.xime.settings.InputProfile, dragEdit: Boolean): SentenceParts? {
     val reselect = callbacks.onReselectSentenceWord ?: return null
-    if (usesSentenceDragEdit(profile) || usesT9DragReselect(profile)) return null
+    // 开着拖选时只在长句上拖选；短句或开关关着没有拖选，回到卡片里拆词重选，两种入口仍不同时出现。
+    if ((usesSentenceDragEdit(profile) || usesT9DragReselect(profile)) && sentenceDragApplies(word, dragEdit)) return null
     if (!first || !cs.isComposing || cs.candidates.firstOrNull() != word) return null
     val words = callbacks.sentenceWords(word)?.takeIf { it.size >= 2 } ?: return null
     return SentenceParts(words) { target ->

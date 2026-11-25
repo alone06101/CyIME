@@ -135,6 +135,9 @@ val prepareChineseDictionaries by tasks.registering {
     // 游戏名、网络流行语（tools/dictionaries/new_words.py 生成，和 cyime_domain_terms.tsv 一样只往上提）。
     val newWords = file("data/cyime_new_words.tsv")
     inputs.file(newWords)
+    // 口语「动作 + 时长/动量/结果」短语（讲半天、骂一下、问了一下），词典里没有，逐字拼会出 将半天。同样只往上提，选法见文件头。
+    val spokenPhrases = file("data/cyime_spoken_phrases.tsv")
+    inputs.file(spokenPhrases)
     val removedWords = file("data/cyime_removed_words.txt.gz")
     inputs.file(removedWords)
     val removedNames = file("data/cyime_removed_names.txt")
@@ -199,6 +202,31 @@ val prepareChineseDictionaries by tasks.registering {
                 }
             }
         }
+        // 候选里显示表情只给表情（#496）。雾凇的 emoji.json 还套着 others.txt（英文月份、偏旁、化学式、数学和单位符号……），
+        // 只开表情也出符号，开着「打符号名出符号」时加号、平方这些出两遍。只留 emoji.txt，再去掉里面的货币符号和 © ® ™
+        // （符号表里有人民币符号、版权符号这些）。
+        File(root, "opencc/emoji.json").writeText("""
+            {
+              "name": "Chinese to Emoji (CyIME: emoji only)",
+              "segmentation": { "type": "mmseg", "dict": { "type": "text", "file": "emoji.txt" } },
+              "conversion_chain": [ { "dict": { "type": "text", "file": "emoji.txt" } } ]
+            }
+        """.trimIndent() + "\n")
+        val emojiTable = File(root, "opencc/emoji.txt")
+        fun isEmoji(value: String) = value.codePoints().anyMatch {
+            it >= 0x1F000 || it in 0x2190..0x2BFF || it == 0xFE0F || it == 0x3030 || it == 0x303D || it == 0x3297 || it == 0x3299
+        }
+        var droppedSymbols = 0
+        emojiTable.writeText(emojiTable.readLines().mapNotNull { line ->
+            val tab = line.indexOf('\t')
+            if (tab < 0) return@mapNotNull line.takeIf { it.isNotEmpty() }
+            // 第一个值是词本身，留着；后面只留表情，一个表情都不剩的行整行不要。
+            val values = line.substring(tab + 1).split(' ')
+            val kept = values.take(1) + values.drop(1).filter(::isEmoji)
+            droppedSymbols += values.size - kept.size
+            if (kept.size < 2) null else line.substring(0, tab + 1) + kept.joinToString(" ")
+        }.joinToString("\n", postfix = "\n"))
+        check(droppedSymbols in 1..100) { "Upstream emoji table changed: $droppedSymbols non-emoji values" }
         fun reweight(name: String, table: File) {
             val estimated = java.util.zip.GZIPInputStream(table.inputStream()).bufferedReader().useLines { lines ->
                 lines.associate { line -> line.substringBeforeLast('\t') to line.substringAfterLast('\t') }
@@ -234,7 +262,7 @@ val prepareChineseDictionaries by tasks.registering {
         // rate the IME's own words near zero (上屏 43, 出词 11), so 只输入声母 came out 只输入圣母 and 每个键
         // 每个见. Raise the existing rime-ice entries here; missing ones are added to cyime_terms below.
         // The user's must-pass words (app/data/cyime_user_fixes.tsv) use the same floor, one code each.
-        val domainFloors = (domainTerms.readLines() + userFixes.readLines() + newWords.readLines()).filter { it.isNotBlank() && !it.startsWith("#") }
+        val domainFloors = (domainTerms.readLines() + userFixes.readLines() + newWords.readLines() + spokenPhrases.readLines()).filter { it.isNotBlank() && !it.startsWith("#") }
             .map { it.split('\t') }.associate { (it[0] + "\t" + it[1]) to it[2].toInt() }.toMutableMap()
         // Sentence pattern verb + 完了/好了 + 吗/没 (user 2026-10-30: 测完了吗 came out 测验了吗 on nine-key): these
         // phrases sat near 200, below 洗澡了吗 and 吃药了吗 on the same keys; each one present gets at least 1000
@@ -782,6 +810,19 @@ val prepareChineseDictionaries by tasks.registering {
             // by the word model alone, and a sentence that also dropped a doubled letter led for being a word shorter:
             // ...butinghuaa 不听话 over 不听话啊). Only matters with translator/cyime_extra_letter_sentences.
             "  extra_corrections_pay_margin: true\n" +
+            // stray_correction_margin: with an initial standing alone before the last syllable
+            // (translator/cyime_stray_initial_correction above) the corrected sentence led whatever the word model
+            // said, so a word typed by its initials inside full pinyin (l for 了, g for 个, d for 打) lost to a
+            // neighbour-key reading of those initials, more often with the word model than without. Now it leads only
+            // when its score (word model + rescore_rime_weight of Rime's weight) beats the typed choice's by this
+            // margin (ln units; unset: always, as before). correction_lead_bias does not shift it: the never-first
+            // level's note (TypoStrength) relies on corrections still leading where the letters do not read in full by
+            // normal spellings. 2026-11-24 cloud engine (107 + this), bundled model, chosen on 2000 held-out real
+            // clauses: one word typed by its initials 34 -> 62 of 160, real typing 1142 -> 1152 (10 fixed, none
+            // broken), touch and clean typing unchanged; real slips break from 3 on (2 at 3, 25 at 9.2). Confirmed on
+            // 6457 others: initials 122 -> 180 of 600, real typing 3680 -> 3697 (22 fixed, 5 broken), touch 4615 ->
+            // 4613, clean typing and the 1193 must-pass unchanged; the tablet's full model alike.
+            "  stray_correction_margin: 2\n" +
             // correction_lead_bias: the keyboard's 邻键纠错强度 (TypoStrength.Lead; ln units), added to the three margins a
             // corrected reading must win by before it leads what was typed: the 2000 times of a corrected word
             // (candidate_policy.cc), slip_correction_margin and tail_correction_margin above. Not applied on the
@@ -946,7 +987,11 @@ val prepareChineseDictionaries by tasks.registering {
             .replace("  filters:\n", "  filters:\n    - cyime_candidate_policy\n")
             // No force_gc translator, as in full pinyin above.
             .also { check(it.contains("\n    - lua_translator@*force_gc")) { "Upstream double_pinyin_flypy translator list changed" } }
-            .lineSequence().filterNot { it.contains("- lua_translator@*force_gc") }.joinToString("\n")
+            .also { check(it.contains("\n    - lua_filter@*autocap_filter")) { "Upstream double_pinyin_flypy filter list changed" } }
+            // English memory as in full pinyin (11-25 他：双拼里打过的 Abc123 也要能补全): the letters typed are the word's.
+            .lineSequence().filterNot { it.contains("- lua_translator@*force_gc") }
+            .flatMap { if (it.contains("- lua_filter@*autocap_filter")) sequenceOf(it, "    - lua_filter@*cyime_en_memory") else sequenceOf(it) }
+            .joinToString("\n")
             .let { withUserPhraseForms(withGreekLetters(withSymbolNames(withDatetimeHints(it)))) }
             // 生僻字 also for double pinyin (GitHub #72, same default-off switch): the Lua translator maps the two keys
             // through this scheme's preedit_format; DoublePinyinScheme copies both lines into every generated scheme.

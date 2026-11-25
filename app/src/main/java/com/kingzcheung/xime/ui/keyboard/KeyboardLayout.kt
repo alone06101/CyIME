@@ -208,7 +208,7 @@ fun KeyboardLayout(
     val numberKeys = remember(numberRowPrefs.numberRow, zhuyin, numberRowPrefs.sideSymbols) {
         if (numberRowShown(numberRowPrefs.numberRow, zhuyin)) numberRowPrefs.numberRowKeys() else emptyList()
     }
-    val numberRowWeight = if (numberKeys.isEmpty()) 0f else NUMBER_ROW_HEIGHT_WEIGHT
+    val numberRowWeight = if (numberKeys.isEmpty()) 0f else numberRowHeightWeight(numberRowPrefs.numberRowFullHeight)
     val metricContext = LocalContext.current
     val metricDisplay = LocalView.current.display
     val metricConfiguration = LocalConfiguration.current
@@ -1137,7 +1137,8 @@ fun KeyboardLayout(
                         CompositionLocalProvider(LocalKeyboardPunctuation provides null) {
                         SwipeableKeyButton(
                             layoutMode = KeysConfigHelper.getButtonLayout(isAsciiMode),
-                            followSymbolSwipeDirection = !keyLabelPrefs.bottomPunctuationSwipeUp,
+                            // 带分词的标点键不跟角标方向翻：' 画在左下角就下滑分词、副标点上滑（11-24 反馈「中文逗号下滑分词失效」）。
+                            followSymbolSwipeDirection = !keyLabelPrefs.bottomPunctuationSwipeUp && !split,
                             keepSymbolSwipeOnLongPress = keyLabelPrefs.bottomPunctuationSwipeUp,
                             text = key.primary,
                             onClick = { commitPunctuation(key.primary) },
@@ -1175,7 +1176,7 @@ fun KeyboardLayout(
                                 modifier = Modifier.weight(bottom.punctuation)
                             )
                         } else {
-                            for (slot in 1..2) {
+                            for (slot in com.kingzcheung.xime.keyboard.modeSlotOrder(numberRowPrefs.swapModeKeys)) {
                                 KeyboardModeKey(
                                     slot = slot, onKeyPress = onKeyPress,
                                     backgroundColor = specialKeyBackgroundColor,
@@ -1503,6 +1504,8 @@ fun KeyboardLayout(
                                 shadowEnabled = shadowEnabled,
                                 shadowElevation = shadowElevation,
                                 shadowShapeRadius = shadowShapeRadius,
+                                // 「回车发送」时长按换行（#169）；按着 !@# 时照旧 Ctrl+回车。
+                                onLongClick = enterLongPressNewline(enterKeyText) { if (!shiftSlideTargets.ctrlEnter()) shiftEnter() },
                             )
                         }
                     }
@@ -1944,6 +1947,8 @@ internal fun ShiftCapsKeyButton(
                     // 也不会按住打出大写字母把拼音打断（#464）。
                     val splitTap = tapOutput == null && currentSplit?.invoke() == true
                     var holding = tapOutput == null && !splitTap
+                    // 按住 Shift 之前按下、还没抬的字母先按原样出（见 KeyPressOrder），不被这次 Shift 变成大写。
+                    if (holding) KeyPressOrder.settleAll()
                     if (holding) viewModel.beginShiftHold()
                     var released = false
                     var dragged = false
@@ -1969,6 +1974,8 @@ internal fun ShiftCapsKeyButton(
                             if (!change.pressed) {
                                 released = true
                                 upTime = change.uptimeMillis
+                                // 这个键松手要生效了（分词、长音、切大小写）：比它早按下、还没抬的字母先出。
+                                KeyPressOrder.settleAll()
                                 // 键缝动效：从 Shift 拖到字母上松手，大写收到那个字母上（换成按键区里的位置）。
                                 if (dragged && target != null && targets != null && targets.keyboardBounds.contains(target.bounds.center)) {
                                     currentGapLight?.aim(target.bounds.center - targets.keyboardBounds.topLeft)
@@ -2289,11 +2296,12 @@ internal fun shiftedKeyPress(key: String, shift: com.kingzcheung.xime.viewmodel.
  * 或是字母语言键盘（[accentLetters] 不空：西班牙、德、俄语等，长按要的是 ñ、ä 这类）时不排，照旧。
  */
 internal fun letterMenuCenterItems(key: String, labels: List<String>?, isShifted: Boolean, accentLetters: String): List<String> {
-    if (labels == null || accentLetters.isNotEmpty() || key.length != 1 || key[0].lowercaseChar() !in 'a'..'z') return emptyList()
-    val upper = key.uppercase()
-    val lower = key.lowercase()
-    if (upper !in labels || lower !in labels) return emptyList()
-    return if (isShifted) listOf(lower, upper) else listOf(upper, lower)
+    if (labels == null || accentLetters.isNotEmpty() || key.length !in 1..2 || !key.all { it.lowercaseChar() in 'a'..'z' }) return emptyList()
+    // 14 键合并键（qw）：两个大写在前、两个小写在后，松手不挪是左边那个字母的大写（11-24 长按方案）。
+    val upper = key.map { it.uppercase() }
+    val lower = key.map { it.lowercase() }
+    if (!labels.containsAll(upper) || !labels.containsAll(lower)) return emptyList()
+    return if (isShifted) lower + upper else upper + lower
 }
 
 /**
