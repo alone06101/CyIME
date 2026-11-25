@@ -120,6 +120,7 @@ object SettingsPreferences {
     private const val KEY_SETUP_COMPLETED = "setup_completed"
     private const val KEY_DARK_MODE = "dark_mode"
     private const val KEY_VERBOSE_LOGGING = "verbose_logging"
+    private const val KEY_LAUNCH_AD_EGG = "launch_ad_easter_egg"
     
     private const val KEY_SOUND_ENABLED = "sound_enabled"
     private const val KEY_SOUND_VOLUME = "sound_volume"
@@ -853,6 +854,15 @@ object SettingsPreferences {
 
     fun setVerboseLoggingEnabled(context: Context, enabled: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_VERBOSE_LOGGING, enabled).apply()
+    }
+
+    /** 启动广告彩蛋（「关于 CyIME」）：开着时每次打开设置先放一页假广告。默认关。 */
+    fun isLaunchAdEggEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_LAUNCH_AD_EGG, false)
+    }
+
+    fun setLaunchAdEggEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_LAUNCH_AD_EGG, enabled).apply()
     }
 
     fun isSetupCompleted(context: Context): Boolean {

@@ -174,6 +174,10 @@ class MainActivity : ComponentActivity() {
         val openFragment = intent?.getStringExtra("open_fragment")
         val openPluginId = intent?.getStringExtra("open_plugin_id")
         val openPluginSettings = intent?.getBooleanExtra(EXTRA_OPEN_PLUGIN_SETTINGS, false) == true
+        // 启动广告彩蛋（默认关）：只在正常打开设置时放，分享文件、跳到具体页面时不挡。
+        val launchAdAllowed = com.kingzcheung.xime.ui.settings.LaunchAdEgg.allowedAtLaunch(
+            BuildConfig.ELDER, intent?.action, openFragment, openPluginId)
+
         com.kingzcheung.xime.model.DefaultModelInstaller.start(applicationContext)
 
         setContent { com.kingzcheung.xime.ui.i18n.ProvideUiTranslations {
@@ -289,6 +293,8 @@ class MainActivity : ComponentActivity() {
                             )
                     )
 
+                    // 启动广告彩蛋：盖在最上面，5 秒或点「跳过」后收掉。
+                    com.kingzcheung.xime.ui.settings.LaunchAdEasterEgg(launchAdAllowed, blocked = showWizard || showGuide)
                 }
             }
         }}

@@ -170,6 +170,7 @@ fun AboutContent(
     var verboseLoggingEnabled by remember {
         mutableStateOf(SettingsPreferences.isVerboseLoggingEnabled(context))
     }
+    var launchAdEgg by remember { mutableStateOf(SettingsPreferences.isLaunchAdEggEnabled(context)) }
     
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -347,6 +348,25 @@ fun AboutContent(
                             title = "存储空间",
                             onClick = onNavigateToStorageSpace
                         )
+                        // 彩蛋（用户 11-15）：默认关；老人包不放。刚打开时马上放一遍。
+                        if (!BuildConfig.ELDER) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 56.dp),
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                            SettingsToggleItem(
+                                icon = Icons.TwoTone.EmojiEmotions,
+                                title = "启用开屏广告",
+                                subtitle = "",
+                                checked = launchAdEgg,
+                                onCheckedChange = { enabled ->
+                                    launchAdEgg = enabled
+                                    SettingsPreferences.setLaunchAdEggEnabled(context, enabled)
+                                    if (enabled) LaunchAdEgg.preview()
+                                }
+                            )
+                        }
                         if (BuildConfig.DEBUG) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 56.dp),

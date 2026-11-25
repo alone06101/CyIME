@@ -275,7 +275,7 @@ fun SettingsToggleItem(
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            // 说明为空时不占一行。
+            // 说明为空时不占一行（如「启用开屏广告」，用户 11-16 要求不写说明）。
             if (subtitle.isNotEmpty()) Text(
                 text = settingsJumpText(subtitle, subtitleJumps, MaterialTheme.colorScheme.primary),
                 style = MaterialTheme.typography.bodySmall,

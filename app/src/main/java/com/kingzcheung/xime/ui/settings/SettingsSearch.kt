@@ -462,6 +462,7 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         SettingsSearchEntry("检查更新", about, SettingsRoutes.About, "更新 升级 新版本 最新版本 下载 安装 版本号"),
         SettingsSearchEntry("自动检查更新", about, SettingsRoutes.About, "自动 更新 升级 新版本 提醒"),
         SettingsSearchEntry("更新后提示更新内容", about, SettingsRoutes.About, "更新内容 更新日志 新功能 改了什么 公告 提示 首页"),
+        SettingsSearchEntry("启用开屏广告", about, SettingsRoutes.About, "广告 开屏 启动 全屏"),
         page("更新内容", about, SettingsRoutes.ReleaseNotes, "更新内容 更新日志 更新说明 发布说明 新功能 改了什么 公告 changelog"),
         page("隐私策略", about, SettingsRoutes.Privacy, "隐私 数据 联网 收集"),
         page("鸣谢", about, SettingsRoutes.Credits, "致谢 感谢 鸣谢 上游 Xime 雾凇 参考 来源 作者 credits"),
