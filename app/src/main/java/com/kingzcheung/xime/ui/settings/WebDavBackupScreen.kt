@@ -146,9 +146,14 @@ fun WebDavBackupScreen(onBack: () -> Unit) {
                         Text("备份并上传到云端", modifier = Modifier.padding(start = 6.dp))
                     }
                     Text(
-                        text = "备份包会存到服务器的 CyIME-backup/ 目录，文件名为 CyIME-日期.zip。",
+                        text = "备份包存到服务器的 CyIME-backup/ 目录，文件名 CyIME-日期.zip。密码只存在本机（硬件加密），不会明文保存。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline
+                    )
+                    Text(
+                        text = "备份内容与「备份与恢复」页的选择一致；若勾选「包含插件配置」，云端备份包里会含 AI 密钥等明文，请确保云端只有你能访问。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
                     )
                     message?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

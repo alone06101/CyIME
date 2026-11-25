@@ -172,7 +172,7 @@ fun BackupSettingsContent(onBack: () -> Unit, onNavigateToWebDav: () -> Unit = {
                     SettingsToggleItem(
                         icon = Icons.TwoTone.Extension,
                         title = "包含插件配置",
-                        subtitle = "AI、翻译等插件填的密钥和配置",
+                        subtitle = "AI、翻译等插件的密钥和配置；上传云端时为明文",
                         checked = includePluginConfig,
                         onCheckedChange = { includePluginConfig = it; BackupChoices.setIncludePluginConfig(context, it) }
                     )
