@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.twotone.CloudDownload
 import androidx.compose.material.icons.twotone.CloudUpload
 import androidx.compose.material.icons.twotone.Schedule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -22,6 +24,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -36,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.kingzcheung.xime.settings.BackupManager
 import com.kingzcheung.xime.settings.WebDavBackup
 import com.kingzcheung.xime.settings.WebDavConfig
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +59,9 @@ fun WebDavBackupScreen(onBack: () -> Unit) {
     var frequency by remember { mutableStateOf(WebDavConfig.frequency(context)) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var cloudFiles by remember { mutableStateOf<List<String>>(emptyList()) }
+    var listed by remember { mutableStateOf(false) }
+    var pendingRestore by remember { mutableStateOf<String?>(null) }
 
     fun persist() = WebDavConfig.save(context, baseUrl, username, password)
 
@@ -198,6 +205,76 @@ fun WebDavBackupScreen(onBack: () -> Unit) {
                     }
                 }
             }
+
+            SettingsSection(title = "从云端恢复") {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            persist()
+                            busy = true
+                            message = null
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) { WebDavBackup.listBackups(context) }
+                                busy = false
+                                result.fold(
+                                    onSuccess = { files ->
+                                        cloudFiles = files
+                                        listed = true
+                                        if (files.isEmpty()) message = "云端还没有备份文件"
+                                    },
+                                    onFailure = { message = "获取云端列表失败：${it.message ?: "未知错误"}" }
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !busy
+                    ) { Text("列出云端备份") }
+                    if (cloudFiles.isEmpty() && listed) {
+                        Text("云端还没有备份文件。", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline)
+                    }
+                    cloudFiles.forEach { fileName ->
+                        SettingsItem(
+                            icon = Icons.TwoTone.CloudDownload,
+                            title = fileName,
+                            subtitle = "下载并恢复（覆盖当前设置和词库）",
+                            onClick = { pendingRestore = fileName }
+                        )
+                    }
+                }
+            }
+        }
+
+        pendingRestore?.let { fileName ->
+            AlertDialog(
+                onDismissRequest = { pendingRestore = null },
+                title = { Text("从云端恢复") },
+                text = { Text("下载 $fileName 并恢复？会覆盖当前设置和词库。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        pendingRestore = null
+                        busy = true
+                        message = null
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                WebDavBackup.download(context, fileName).fold(
+                                    onSuccess = { bytes -> BackupManager.importBackup(context, bytes) },
+                                    onFailure = { Result.failure(it) }
+                                )
+                            }
+                            busy = false
+                            message = result.fold(
+                                onSuccess = { "恢复完成，设置已生效" },
+                                onFailure = { "恢复失败：${it.message ?: "未知错误"}" }
+                            )
+                        }
+                    }) { Text("下载并恢复") }
+                },
+                dismissButton = { TextButton(onClick = { pendingRestore = null }) { Text("取消") } }
+            )
         }
     }
 }

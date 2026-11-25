@@ -116,6 +116,48 @@ object WebDavBackup {
         }
     }
 
+    /** 列出云端 CyIME-backup/ 目录里的备份文件名（新的在前）。 */
+    fun listBackups(context: Context): Result<List<String>> = runCatching {
+        val base = WebDavConfig.baseUrl(context).trim().trimEnd('/')
+        require(base.isNotBlank()) { "未配置 WebDAV 服务器地址" }
+        val username = WebDavConfig.username(context)
+        val password = WebDavConfig.password(context)
+        val auth = if (username.isNotEmpty()) Credentials.basic(username, password) else null
+        val request = Request.Builder().url("$base/$DIR_NAME/")
+            .apply { auth?.let { header("Authorization", it) } }
+            .method("PROPFIND", null)
+            .header("Depth", "1")
+            .build()
+        client.newCall(request).execute().use { response ->
+            check(response.code in 200..299) { "列出文件失败：HTTP ${response.code}" }
+            parseFileNames(response.body?.string().orEmpty())
+        }
+    }.onFailure { Log.e(TAG, "listBackups failed", it) }
+
+    /** 从云端下载一个备份文件的内容。 */
+    fun download(context: Context, fileName: String): Result<ByteArray> = runCatching {
+        val base = WebDavConfig.baseUrl(context).trim().trimEnd('/')
+        require(base.isNotBlank()) { "未配置 WebDAV 服务器地址" }
+        val username = WebDavConfig.username(context)
+        val password = WebDavConfig.password(context)
+        val auth = if (username.isNotEmpty()) Credentials.basic(username, password) else null
+        val request = Request.Builder().url("$base/$DIR_NAME/$fileName")
+            .apply { auth?.let { header("Authorization", it) } }
+            .get().build()
+        client.newCall(request).execute().use { response ->
+            check(response.code in 200..299) { "下载失败：HTTP ${response.code}" }
+            response.body?.bytes() ?: error("下载内容为空")
+        }
+    }.onFailure { Log.e(TAG, "download failed", it) }
+
+    /** 从 WebDAV PROPFIND 的 XML 里解析出备份文件名。 */
+    private fun parseFileNames(xml: String): List<String> {
+        val regex = Regex("<[^>]*href[^>]*>([^<]+)</[^>]*href[^>]*>", RegexOption.IGNORE_CASE)
+        return regex.findAll(xml).map { m ->
+            m.groupValues[1].trim().substringAfterLast('/').trim()
+        }.filter { it.endsWith(".zip") }.distinct().sortedDescending()
+    }
+
     /** 打开/关闭自动备份（每天或每周）。 */
     fun scheduleAutoBackup(context: Context, enabled: Boolean, frequency: WebDavConfig.Frequency) {
         val name = "webdav_auto_backup"
