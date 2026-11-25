@@ -66,7 +66,7 @@ object BackupManager {
         "clipboard_sync_enabled", "clipboard_sync_plugin_id", "backup_plugin_id"
     )
 
-    private const val MAX_ARCHIVE_BYTES = 256L * 1024 * 1024
+    private const val MAX_ARCHIVE_BYTES = 1024L * 1024 * 1024
 
     private val BACKUP_SUBDIRS = setOf("learning-profiles", "handwriting_templates", "handwriting_training")
 

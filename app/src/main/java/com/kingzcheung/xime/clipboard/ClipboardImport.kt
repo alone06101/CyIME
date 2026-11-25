@@ -22,7 +22,7 @@ internal data class ImportedClip(
  */
 internal object ClipboardImport {
     /** Larger files are refused before reading: the whole clipboard holds about 2 MB of text. */
-    const val MAX_FILE_BYTES = 16 * 1024 * 1024
+    const val MAX_FILE_BYTES = 512 * 1024 * 1024
 
     private const val TXT_SEPARATOR = "\n\n----------\n\n"
     private const val MD_TITLE = "# CyIME 剪贴板"
