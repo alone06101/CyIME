@@ -116,7 +116,17 @@ object WanxiangUpdate {
         val dl = XimeIndexSource.downloadScheme(context, scheme, onDownloadProgress = onDownloadProgress)
         if (!dl.success) return@withContext false
         onInstalling()
-        val inst = XimeIndexSource.installFromMarket(context, scheme)
+        // 直接走 installPackageFromMarketDir，replaceConflictingFiles=true：允许覆盖用户之前「导入」的万象拼音旧版（claimBy=LOCAL_OWNER）。
+        val inst = SchemaManager.installPackageFromMarketDir(
+            context = context,
+            packageId = scheme.id,
+            displayName = scheme.name,
+            version = scheme.currentVersion,
+            fromMarket = true,
+            dependencies = scheme.dependencies,
+            switchEnabled = true,
+            replaceConflictingFiles = true,
+        )
         if (!inst.success) return@withContext false
         markInstalled(context, release.version)
         true

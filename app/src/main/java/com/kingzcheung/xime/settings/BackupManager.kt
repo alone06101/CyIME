@@ -167,7 +167,7 @@ object BackupManager {
         if (name.startsWith("user_")) return false
         return relative.endsWith(".schema.yaml") || relative.endsWith(".dict.yaml") ||
             relative.endsWith(".yaml") || relative.endsWith(".lua") ||
-            relative.endsWith(".gram") || relative.startsWith("lua/") || relative.startsWith("opencc/")
+            relative.startsWith("lua/") || relative.startsWith("opencc/")
     }
 
     /** 内置方案在 rime 目录里的文件路径集合（从 rime-bundled-manifest.tsv 读）。 */
