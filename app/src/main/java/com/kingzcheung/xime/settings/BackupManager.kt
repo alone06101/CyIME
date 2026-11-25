@@ -160,15 +160,39 @@ object BackupManager {
             (relative.startsWith("user_") && !relative.startsWith("user_cyime_cells_") && relative.endsWith(".dict.yaml"))
     }
 
+    /** 第三方导入的方案文件（schema/dict/lua/opencc 等；Rime 部署产物与 App 基础配置不算）。 */
+    internal fun isImportedRimeFile(relative: String): Boolean {
+        val name = relative.substringAfterLast('/')
+        if (name in setOf("installation.yaml", "default.yaml", "xime.yaml", "default.custom.yaml")) return false
+        if (name.startsWith("user_")) return false
+        return relative.endsWith(".schema.yaml") || relative.endsWith(".dict.yaml") ||
+            relative.endsWith(".yaml") || relative.endsWith(".lua") ||
+            relative.endsWith(".gram") || relative.startsWith("lua/") || relative.startsWith("opencc/")
+    }
+
+    /** 内置方案在 rime 目录里的文件路径集合（从 rime-bundled-manifest.tsv 读）。 */
+    internal fun bundledRimeFiles(context: Context): Set<String> = runCatching {
+        context.assets.open("rime-bundled-manifest.tsv").bufferedReader().useLines { lines ->
+            lines.mapNotNull { line ->
+                line.split('\t').lastOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            }.toSet()
+        }
+    }.getOrDefault(emptySet())
+
     /** 列出本地备份要写入的文件：条目名 → 源文件（纯 JVM，便于单测）。 */
-    internal fun localBackupFiles(filesDir: File, includePersonal: Boolean): List<Pair<String, File>> {
+    internal fun localBackupFiles(filesDir: File, includePersonal: Boolean, bundled: Set<String> = emptySet()): List<Pair<String, File>> {
         val result = mutableListOf<Pair<String, File>>()
         val rimeDir = File(filesDir, "rime")
         rimeDir.walkTopDown().filter { it.isFile }.forEach { file ->
             val relative = file.relativeTo(rimeDir).path.replace('\\', '/')
-            if (isRimeSettingsFile(relative) || (includePersonal && isRimePersonalFile(relative))) {
-                result += relative to file
+            val backup = when {
+                isRimeSettingsFile(relative) -> true
+                isRimePersonalFile(relative) -> includePersonal
+                relative in bundled -> false
+                isImportedRimeFile(relative) -> true
+                else -> false
             }
+            if (backup) result += relative to file
         }
         filesDir.walkTopDown()
             .onEnter { it == filesDir || (it.parentFile == filesDir && it.name in BACKUP_SUBDIRS) }
@@ -193,7 +217,7 @@ object BackupManager {
 
     /** 写本地备份包到 [output]，返回写入的文件数（不含设置 JSON）。[clipboard]：剪贴板记录 JSON，null 不写。 */
     fun writeLocalBackup(context: Context, output: OutputStream, includePersonal: Boolean, clipboard: String? = null, includePluginConfig: Boolean = false): Int {
-        val files = localBackupFiles(context.filesDir, includePersonal)
+        val files = localBackupFiles(context.filesDir, includePersonal, bundledRimeFiles(context))
         ZipOutputStream(output).use { zos ->
             fun put(name: String, bytes: ByteArray) {
                 zos.putNextEntry(ZipEntry(name)); zos.write(bytes); zos.closeEntry()

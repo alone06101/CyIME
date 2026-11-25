@@ -279,7 +279,8 @@ class BackupManagerTest {
             "handwriting_templates/kana_default_och_v2.json", "handwriting_training/samples.jsonl"
         ).forEach { write(files, it) }
 
-        val plain = BackupManager.localBackupFiles(files, includePersonal = false).map { it.first }
+        val bundled = setOf("rime_ice.schema.yaml", "rime_ice.dict.yaml")
+        val plain = BackupManager.localBackupFiles(files, includePersonal = false, bundled = bundled).map { it.first }
         assertEquals(
             listOf(
                 "${BackupManager.META_PREFIX}files/custom-keyboard-layouts.json",
@@ -288,7 +289,7 @@ class BackupManagerTest {
             plain
         )
 
-        val personal = BackupManager.localBackupFiles(files, includePersonal = true).map { it.first }
+        val personal = BackupManager.localBackupFiles(files, includePersonal = true, bundled = bundled).map { it.first }
         assertEquals(
             (plain + listOf(
                 "${BackupManager.META_PREFIX}files/handwriting_templates/kana_och.json",
@@ -366,6 +367,24 @@ class BackupManagerTest {
         assertTrue(BackupManager.isCyimeBackup(zipOfText(mapOf("${BackupManager.META_PREFIX}settings.json" to "{}"))))
         assertTrue(!BackupManager.isCyimeBackup(zipOfText(mapOf("default.yaml" to "config:"))))
         assertTrue(!BackupManager.isCyimeBackup("not a zip".toByteArray()))
+    }
+
+    @Test
+    fun `imported third-party schema files are backed up`() {
+        val files = tempDir.newFolder("files")
+        listOf(
+            "rime/wanxiang.schema.yaml", "rime/wanxiang.dict.yaml",
+            "rime/wanxiang_algebra.yaml", "rime/lua/wanxiang.lua",
+            "rime/opencc/custom.ocd2", "rime/rime_ice.schema.yaml"
+        ).forEach { write(files, it) }
+
+        val bundled = setOf("rime_ice.schema.yaml")
+        val plain = BackupManager.localBackupFiles(files, includePersonal = false, bundled = bundled).map { it.first }
+        assertEquals(
+            listOf("lua/wanxiang.lua", "opencc/custom.ocd2", "wanxiang.dict.yaml",
+                "wanxiang.schema.yaml", "wanxiang_algebra.yaml"),
+            plain.sorted()
+        )
     }
 
     @Test
