@@ -153,9 +153,12 @@ object WebDavBackup {
     /** 从 WebDAV PROPFIND 的 XML 里解析出备份文件名。 */
     private fun parseFileNames(xml: String): List<String> {
         val regex = Regex("<[^>]*href[^>]*>([^<]+)</[^>]*href[^>]*>", RegexOption.IGNORE_CASE)
-        return regex.findAll(xml).map { m ->
-            m.groupValues[1].trim().substringAfterLast('/').trim()
-        }.filter { it.endsWith(".zip") }.distinct().sortedDescending()
+        val result = mutableListOf<String>()
+        for (m in regex.findAll(xml)) {
+            val name = m.groupValues[1].trim().substringAfterLast('/').trim()
+            if (name.endsWith(".zip")) result.add(name)
+        }
+        return result.distinct().sortedDescending()
     }
 
     /** 打开/关闭自动备份（每天或每周）。 */
