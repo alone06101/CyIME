@@ -121,7 +121,15 @@ class CellDictionaryViewModel(application: Application) : AndroidViewModel(appli
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                state.update { it.copy(message = error.message ?: "操作失败，请重试", error = true) }
+                // 前面几个文件可能已经装上并选中了：把磁盘上的真实状态同步回 UI，不留“看不见的选中”。
+                val actual = runCatching { withContext(Dispatchers.IO) { store.read() } }.getOrNull()
+                state.update {
+                    it.copy(
+                        dictionaries = actual ?: it.dictionaries,
+                        message = (error.message ?: "操作失败，请重试") + "（已导入的词库已保留）",
+                        error = true,
+                    )
+                }
             } finally { state.update { it.copy(busy = false) } }
         }
     }

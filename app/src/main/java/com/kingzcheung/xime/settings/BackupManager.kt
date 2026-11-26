@@ -6,6 +6,7 @@ import android.util.Log
 import android.net.Uri
 import com.kingzcheung.xime.BuildConfig
 import com.kingzcheung.xime.plugin.SecureValueCipher
+import com.kingzcheung.xime.speech.OnlineSpeechApi
 import java.io.File
 import java.io.OutputStream
 import java.util.zip.ZipEntry
@@ -58,8 +59,8 @@ object BackupManager {
      */
     internal val PARTIAL_PREFS = mapOf(
         "clipboard_board" to setOf("card_max_lines", "image_height", "recent_image_count", "list_layout", "image_cache_mb"),
-        "webdav_backup" to setOf("base_url", "username", "auto_enabled", "frequency"),
-        "online_speech_api" to setOf("base_url", "model", "app_id", "body_template", "text_path"),
+        WebDavConfig.PREFS to setOf("base_url", "username", "auto_enabled", "frequency"),
+        OnlineSpeechApi.PREFS to setOf("base_url", "model", "app_id", "body_template", "text_path"),
     )
 
     /** 只留 [keys] 里的键（[prefsToJson] 格式）。 */
@@ -76,7 +77,18 @@ object BackupManager {
         "clipboard_sync_enabled", "clipboard_sync_plugin_id", "backup_plugin_id"
     )
 
-    private const val MAX_ARCHIVE_BYTES = 1024L * 1024 * 1024
+    /** 硬上阴：再大就不让选。实际可用值看 [maxArchiveBytes]。 */
+    private const val HARD_MAX_ARCHIVE_BYTES = 512L * 1024 * 1024
+
+    /**
+     * 备份包实际上阴：恢复要先把整包读进内存（事务层是 ByteArray），所以按当前堆动态算，
+     * 取「硬上阴」和「1/6 堆」的较小值，下限 32 MB。低端机（heap 256 MB）不会因为
+     * 一个 300 MB 的包直接 OOM。
+     */
+    internal fun maxArchiveBytes(): Long {
+        val byHeap = Runtime.getRuntime().maxMemory() / 6
+        return minOf(HARD_MAX_ARCHIVE_BYTES, maxOf(32L * 1024 * 1024, byHeap))
+    }
 
     private val BACKUP_SUBDIRS = setOf("learning-profiles", "handwriting_templates", "handwriting_training")
 
@@ -108,7 +120,7 @@ object BackupManager {
             items.filter { !it.sensitive && (includeHistory || it.isPinned || inGroup(it)) }, includePinned = true)
 
     /** 本机要备份的剪贴板记录，写成 JSON；没有可带的或读不到时为 null（不影响其余备份）。 */
-    private fun clipboardBackupJson(context: Context, includeHistory: Boolean): String? = runCatching {
+    internal fun clipboardBackupJson(context: Context, includeHistory: Boolean): String? = runCatching {
         val groups = com.kingzcheung.xime.clipboard.ClipboardGroupStore.getInstance(context).state.value
         val all = kotlinx.coroutines.runBlocking {
             com.kingzcheung.xime.clipboard.ClipboardManager.getInstance(context).exportItems()
@@ -288,6 +300,27 @@ object BackupManager {
         return out.toByteArray()
     }
 
+    /** 把备份包直接写到文件，不经过内存（WebDAV 上传用这个，避开大包 OOM）。 */
+    fun backupToFile(context: Context, target: File, includePersonal: Boolean, includeClipboardHistory: Boolean = false, includePluginConfig: Boolean = false): Int {
+        val clipboard = clipboardBackupJson(context, includeClipboardHistory)
+        return target.outputStream().use { writeLocalBackup(context, it, includePersonal, clipboard, includePluginConfig) }
+    }
+
+    /** 读取本地备份文件（WebDAV 下载后的临时文件），上阴同 [readBackup]。 */
+    fun readBackupFile(file: File): Result<ByteArray> = runCatching {
+        require(file.isFile) { "备份文件不存在" }
+        require(file.length() <= maxArchiveBytes()) { "备份文件过大（本机上限 ${maxArchiveBytes() / 1024 / 1024} MB）" }
+        val bytes = file.readBytes()
+        require(isCyimeBackup(bytes)) { "所选文件不是 CyIME 备份" }
+        bytes
+    }
+
+    /** 恢复一个本地备份文件，并把「恢复后还缺什么」一并算好交给界面。 */
+    suspend fun importBackupFileWithReport(context: Context, file: File): Result<RestoreReport> {
+        val bytes = readBackupFile(file).getOrElse { return Result.failure(it) }
+        return importBackupWithReport(context, bytes)
+    }
+
     /** 读取用户选择的备份包；不是 CyIME 备份时拒绝，避免把任意 zip 解进 rime 目录。 */
     fun readBackup(context: Context, uri: Uri): Result<ByteArray> = runCatching {
         val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
@@ -298,7 +331,7 @@ object BackupManager {
                 val read = input.read(chunk)
                 if (read < 0) break
                 total += read
-                require(total <= MAX_ARCHIVE_BYTES) { "备份文件过大" }
+                require(total <= maxArchiveBytes()) { "备份文件过大（本机上限 ${maxArchiveBytes() / 1024 / 1024} MB）" }
                 buffer.write(chunk, 0, read)
             }
             buffer.toByteArray()
@@ -341,10 +374,24 @@ object BackupManager {
     /** 已安装插件的（id，显示名）。插件框架未初始化时返回空，不让备份报错。 */
     internal fun installedPluginSummaries(context: Context): List<Pair<String, String>> = runCatching {
         if (!com.kingzcheung.xime.plugin.core.runtime.PluginManager.isInitialized) {
-            return@runCatching emptyList<Pair<String, String>>()
+            // 插件框架没初始化（备份可能发生在启动早期）：退到读注册表文件，别让清单默默为空。
+            return@runCatching pluginsXmlSummaries(context)
         }
         com.kingzcheung.xime.plugin.core.runtime.PluginManager.getAllInstallPlugins()
             .map { it.id to it.name }.sortedBy { it.first }
+    }.getOrDefault(emptyList())
+
+    /** 从 `filesDir/plugins.xml` 读已装插件的（id，名称）；只用于备份清单，不参与插件加载。 */
+    internal fun pluginsXmlSummaries(context: Context): List<Pair<String, String>> = runCatching {
+        val xml = File(context.filesDir, "plugins.xml")
+        if (!xml.isFile) return@runCatching emptyList<Pair<String, String>>()
+        val content = xml.readText()
+        Regex("<plugin>(.*?)</plugin>", RegexOption.DOT_MATCHES_ALL).findAll(content).mapNotNull { m ->
+            val body = m.groupValues[1]
+            val id = Regex("<id>(.*?)</id>").find(body)?.groupValues?.get(1)?.trim()
+            val name = Regex("<name>(.*?)</name>").find(body)?.groupValues?.get(1)?.trim()
+            id?.takeIf { it.isNotBlank() }?.let { it to (name?.takeIf { n -> n.isNotBlank() } ?: it) }
+        }.sortedBy { it.first }.toList()
     }.getOrDefault(emptyList())
 
     /** 备份包里的 `manifest.json`；旧备份没有这个清单或读不出来时 null。 */
@@ -407,11 +454,11 @@ object BackupManager {
         }
 
         val needsSecrets = buildList {
-            val webdav = context.getSharedPreferences("webdav_backup", Context.MODE_PRIVATE)
+            val webdav = context.getSharedPreferences(WebDavConfig.PREFS, Context.MODE_PRIVATE)
             if (webdav.getString("base_url", "").orEmpty().isNotBlank() &&
                 webdav.getString("password", null).isNullOrBlank()
             ) add("WebDAV 密码")
-            val asr = context.getSharedPreferences("online_speech_api", Context.MODE_PRIVATE)
+            val asr = context.getSharedPreferences(OnlineSpeechApi.PREFS, Context.MODE_PRIVATE)
             val asrConfigured = asr.getString("base_url", "").orEmpty().isNotBlank() ||
                 asr.getString("model", "").orEmpty().isNotBlank()
             if (asrConfigured && asr.getString("api_key", "").orEmpty().isBlank()) add("在线语音 API 密钥")

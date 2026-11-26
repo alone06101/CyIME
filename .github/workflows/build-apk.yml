@@ -11,6 +11,11 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  # 连点两次 dispatch 不应并发构建、也不应同时往同一个 tag 写 Release
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -59,6 +64,15 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Validate version input
+        if: github.event.inputs.version != ''
+        run: |
+          v="${{ github.event.inputs.version }}"
+          if ! printf '%s' "$v" | grep -Eq '^v[0-9]+(\.[0-9]+)+-fork\.[0-9]+$'; then
+            echo "::error::版本号格式不对：$v（应形如 v1.15.107-fork.10）"
+            exit 1
+          fi
+
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon -x :app:prepareOfflineTranslateLibraries
 
@@ -76,6 +90,11 @@ jobs:
           tag_name: ${{ github.event.inputs.version }}
           name: CyIME fork ${{ github.event.inputs.version }}
           generate_release_notes: false
+          body: |
+            fork 自 Cyletix/CyIME，用自己的正式签名构建，可直接覆盖安装本 fork 的历史版本。
+
+            注意：本包的 release 构建带 `-x :app:prepareOfflineTranslateLibraries`，
+            **不含离线翻译库**（上游对应下载任务已 404），需要翻译时请在应用内下载或联网使用。
           files: app/build/outputs/apk/release/*.apk
           draft: false
           prerelease: false

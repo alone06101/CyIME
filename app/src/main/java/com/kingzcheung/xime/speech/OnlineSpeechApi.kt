@@ -36,7 +36,7 @@ object OnlineSpeechApi {
     const val DEFAULT_MODEL = "whisper-1"
     /** 1.15.40～1.15.50 的「在线语音」插件；装过的人第一次打开语音页或说话时，把它的设置搬回来。 */
     private const val OLD_PLUGIN_ID = "com.kingzcheung.xime.plugin.online_asr"
-    private const val PREFS = "online_speech_api"
+    internal const val PREFS = "online_speech_api"
     private const val KEY_BASE_URL = "base_url"
     private const val KEY_API_KEY = "api_key"
     private const val KEY_MODEL = "model"

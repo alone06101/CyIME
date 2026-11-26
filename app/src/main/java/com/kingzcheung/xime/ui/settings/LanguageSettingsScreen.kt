@@ -55,6 +55,7 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
     var wanxiangUpdating by remember { mutableStateOf(false) }
     var wanxiangProgress by remember { mutableStateOf(0L to 0L) }
     var wanxiangInstalling by remember { mutableStateOf(false) }
+    var wanxiangJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val profilesModel: com.kingzcheung.xime.viewmodel.SchemaSettingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val profilesState by profilesModel.uiState.collectAsState()
     var remembered by remember { mutableStateOf(InputModes.rememberedModes(context)) }
@@ -267,7 +268,7 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
 
         wanxiangRelease?.let { release ->
             val installed = com.kingzcheung.xime.settings.WanxiangUpdate.installedVersion(context)
-            val hasUpdate = installed != release.version
+            val hasUpdate = com.kingzcheung.xime.settings.WanxiangUpdate.isNewer(release.version, installed)
             AlertDialog(
                 onDismissRequest = { if (!wanxiangUpdating) wanxiangRelease = null },
                 title = { Text("万象拼音更新") },
@@ -284,7 +285,12 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
                         }
                         Text(progressText)
                     } else {
-                        Text("当前安装：${installed ?: "未知"}\n最新版本：${release.version}${if (hasUpdate) "（有更新）" else "（已是最新）"}\n\n语法模型（wanxiang-lts-zh-hans.gram）已被词组模型取代，无需更新。")
+                        Text(
+                            "当前安装：${installed ?: "未知"}\n最新版本：${release.version}" +
+                                if (hasUpdate) "（有更新）" else "（已是最新）" +
+                                (if (release.hasDigest) "" else "\n\n注：本次 release 没提供 sha256，下载后无法校验完整性。") +
+                                "\n\n语法模型（wanxiang-lts-zh-hans.gram）已被词组模型取代，无需更新。"
+                        )
                     }
                 },
                 confirmButton = {
@@ -293,21 +299,34 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
                             wanxiangUpdating = true
                             wanxiangInstalling = false
                             wanxiangProgress = 0L to 0L
-                            scope.launch {
+                            wanxiangJob = scope.launch {
                                 val ok = com.kingzcheung.xime.settings.WanxiangUpdate.update(
                                     context, release,
                                     onDownloadProgress = { done, total -> wanxiangProgress = done to total },
                                     onInstalling = { wanxiangInstalling = true },
                                 )
                                 wanxiangUpdating = false
+                                wanxiangJob = null
                                 wanxiangRelease = null
-                                message = if (ok) "万象拼音已更新到 ${release.version}" else "万象拼音更新失败，请稍后重试"
+                                message = if (ok) "万象拼音已更新到 ${release.version}" else "万象拼音更新失败，已还原旧版本"
                             }
                         }) { Text(if (hasUpdate) "更新" else "重新下载") }
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { if (!wanxiangUpdating) wanxiangRelease = null }) { Text("关闭") }
+                    TextButton(onClick = {
+                        if (wanxiangUpdating) {
+                            // 下载/安装中给个出路：取消协程，不再把人困在弹窗里
+                            wanxiangJob?.cancel()
+                            wanxiangJob = null
+                            wanxiangUpdating = false
+                            wanxiangInstalling = false
+                            wanxiangRelease = null
+                            message = "已取消万象拼音更新"
+                        } else {
+                            wanxiangRelease = null
+                        }
+                    }) { Text(if (wanxiangUpdating) "取消" else "关闭") }
                 }
             )
         }

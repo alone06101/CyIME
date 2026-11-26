@@ -236,14 +236,23 @@ class CellDictionaryStore(val directory: File) {
     /** 文本词库可能超过单库上限：切成多份，分别转成多个词库。 */
     private fun installTextParts(source: File, hash: String): List<InstalledCellDictionary> {
         val chunks = splitTextFile(source)
-        if (chunks.size == 1) return listOf(installText(chunks[0], hash))
+        val total = chunks.size
+        if (total == 1) return listOf(installText(chunks[0], hash, part = 0, partTotal = 1))
         val result = mutableListOf<InstalledCellDictionary>()
-        chunks.forEachIndexed { index, chunk ->
-            try {
-                result += installText(chunk, hash, part = index)
-            } finally {
-                chunk.delete()
+        try {
+            chunks.forEachIndexed { index, chunk ->
+                try {
+                    // 超限的文件必须带片号/总片数：旧版整包导入时 part0 用的是不带后缀的 id，
+                    // 同名缓存命中会直接复用「含全量词条的旧库」，既重复又让上限失效。
+                    result += installText(chunk, hash, part = index + 1, partTotal = total)
+                } finally {
+                    chunk.delete()
+                }
             }
+        } catch (e: Exception) {
+            // 中途失败就把本次已装的分片清掉，不留半套词库（清理本身失败不能盖住原始异常）。
+            runCatching { result.forEach { remove(it.id) } }
+            throw e
         }
         return result
     }
@@ -284,16 +293,19 @@ class CellDictionaryStore(val directory: File) {
             writer.close()
             if (count > 0) chunks += chunk else chunk.delete()
         } catch (e: Exception) {
-            writer.close()
+            runCatching { writer.close() }
             chunks.forEach { it.delete() }
+            chunk.delete()
             throw e
         }
         return chunks
     }
 
     /** Converted outside the lock (a big list takes seconds), then moved in and recorded under it. */
-    private fun installText(source: File, hash: String, part: Int = 0): InstalledCellDictionary {
-        val id = if (part == 0) "local_${hash.take(24)}" else "local_${hash.take(24)}_part$part"
+    private fun installText(source: File, hash: String, part: Int = 0, partTotal: Int = 1): InstalledCellDictionary {
+        // 只有「没切分」的文件用哈希 id；切分过的必须带 pN_ofM，否者会和旧版整包导入的词库撞 id。
+        val id = if (partTotal <= 1) "local_${hash.take(24)}"
+        else "local_${hash.take(24)}_p${part}_of$partTotal"
         read().installed.firstOrNull { it.id == id }?.let { if (dictionaryFile(id).isFile) return it }
         val converted = File.createTempFile(".import-", ".tmp", directory)
         val strokeWords = File.createTempFile(".import-", ".tmp", directory)

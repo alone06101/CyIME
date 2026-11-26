@@ -262,8 +262,14 @@ fun WebDavBackupScreen(onBack: () -> Unit) {
                         message = null
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {
-                                WebDavBackup.download(context, fileName).fold(
-                                    onSuccess = { bytes -> BackupManager.importBackupWithReport(context, bytes) },
+                                WebDavBackup.downloadToFile(context, fileName).fold(
+                                    onSuccess = { file ->
+                                        try {
+                                            BackupManager.importBackupFileWithReport(context, file)
+                                        } finally {
+                                            file.delete()
+                                        }
+                                    },
                                     onFailure = { Result.failure(it) }
                                 )
                             }

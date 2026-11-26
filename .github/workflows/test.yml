@@ -7,8 +7,9 @@
 #
 # 另外两个容易看错的点：
 # - 出包走 build-apk.yml（Build & Release APK，版本号留空则只出 artifact）；
-# - 上游自带的 build.yml（Build and Test APK）在本 fork 上一直是红的，它要拉上游已 404 的
-#   离线翻译库，不是本 fork 的回归信号，不要拿它判断改动好坏。
+# - 上游自带的 build.yml（Build and Test APK）是 push 自动触发的那个：跑单测 + debug APK +
+#   插件包，单测绿它就是绿的；它不带 -x :app:prepareOfflineTranslateLibraries，碰到上游
+#   离线翻译库任务 404 时也可能红，先看是不是这个原因，别急着当成代码回归。
 
 permissions:
   contents: read

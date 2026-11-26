@@ -2,7 +2,10 @@ package com.kingzcheung.xime.settings
 
 import android.content.Context
 import android.util.Log
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
@@ -12,7 +15,9 @@ import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -20,7 +25,7 @@ import java.util.concurrent.TimeUnit
 
 /** WebDAV 云端备份配置：服务器地址、账号、密码（硬件加密存），以及自动备份开关与频率。 */
 object WebDavConfig {
-    private const val PREFS = "webdav_backup"
+    internal const val PREFS = "webdav_backup"
     private const val KEY_BASE_URL = "base_url"
     private const val KEY_USERNAME = "username"
     private const val KEY_PASSWORD = "password"
@@ -73,27 +78,42 @@ object WebDavBackup {
         .writeTimeout(180, TimeUnit.SECONDS)
         .build()
 
-    /** 按日期生成备份文件名，如 CyIME-2026-11-25.zip。 */
+    /** 按日期生成备份文件名，如 CyIME-2026-11-25-1530.zip（同日多次备份不互相覆盖）。 */
     fun backupFileName(): String =
-        "CyIME-" + SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) + ".zip"
+        "CyIME-" + SimpleDateFormat("yyyy-MM-dd-HHmm", Locale.US).format(Date()) + ".zip"
 
-    /** 手动触发：生成并上传备份包。 */
-    fun backupAndUpload(context: Context, includePersonal: Boolean, includeClipboardHistory: Boolean, includePluginConfig: Boolean): Result<Unit> = runCatching {
-        val bytes = BackupManager.backupToBytes(context, includePersonal, includeClipboardHistory, includePluginConfig)
-        upload(context, bytes, backupFileName())
+    /** 云端的备份文件名只允许这套字符，防止 PROPFIND 返回的异常名字拼出目录穿越路径。 */
+    private val SAFE_NAME = Regex("[A-Za-z0-9._-]+\\.zip")
+
+    internal fun requireSafeName(fileName: String): String {
+        val name = fileName.substringAfterLast('/')
+        require(name.isNotBlank() && name.matches(SAFE_NAME)) { "非法的备份文件名" }
+        return name
     }
 
-    /** 上传一段内容到 WebDAV。先确保目录存在，再 PUT 文件。 */
+    /** 手动触发：生成并上传备份包（备份先写 cacheDir 临时文件，不经过内存）。 */
+    fun backupAndUpload(context: Context, includePersonal: Boolean, includeClipboardHistory: Boolean, includePluginConfig: Boolean): Result<Unit> = runCatching {
+        val tmp = File(context.cacheDir, "webdav-upload.zip")
+        try {
+            BackupManager.backupToFile(context, tmp, includePersonal, includeClipboardHistory, includePluginConfig)
+            uploadFile(context, tmp, backupFileName()).getOrThrow()
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    /** 上传一段内容到 WebDAV（小包用；大包请走 [uploadFile]）。先确保目录存在，再 PUT 文件。 */
     fun upload(context: Context, bytes: ByteArray, fileName: String): Result<Unit> = runCatching {
+        val name = requireSafeName(fileName)
         val base = WebDavConfig.baseUrl(context).trim().trimEnd('/')
         require(base.isNotBlank()) { "未配置 WebDAV 服务器地址" }
+        require(base.startsWith("https://")) { "WebDAV 地址必须是 https（Basic 认证密码不能走明文）" }
         val username = WebDavConfig.username(context)
         val password = WebDavConfig.password(context)
         val auth = if (username.isNotEmpty()) Credentials.basic(username, password) else null
 
         ensureDirectory(base, auth)
-        val fileUrl = "$base/$DIR_NAME/$fileName"
-        val request = Request.Builder().url(fileUrl)
+        val request = Request.Builder().url("$base/$DIR_NAME/$name")
             .apply { auth?.let { header("Authorization", it) } }
             .put(bytes.toRequestBody(ZIP_MEDIA_TYPE.toMediaType()))
             .build()
@@ -101,6 +121,26 @@ object WebDavBackup {
             check(response.code in 200..299) { "上传失败：HTTP ${response.code}" }
         }
     }.onFailure { Log.e(TAG, "upload failed", it) }
+
+    /** 上传一个本地备份文件（流式，不把整包读进内存）。 */
+    fun uploadFile(context: Context, file: File, fileName: String): Result<Unit> = runCatching {
+        val name = requireSafeName(fileName)
+        val base = WebDavConfig.baseUrl(context).trim().trimEnd('/')
+        require(base.isNotBlank()) { "未配置 WebDAV 服务器地址" }
+        require(base.startsWith("https://")) { "WebDAV 地址必须是 https（Basic 认证密码不能走明文）" }
+        val username = WebDavConfig.username(context)
+        val password = WebDavConfig.password(context)
+        val auth = if (username.isNotEmpty()) Credentials.basic(username, password) else null
+
+        ensureDirectory(base, auth)
+        val request = Request.Builder().url("$base/$DIR_NAME/$name")
+            .apply { auth?.let { header("Authorization", it) } }
+            .put(file.asRequestBody(ZIP_MEDIA_TYPE.toMediaType()))
+            .build()
+        client.newCall(request).execute().use { response ->
+            check(response.code in 200..299) { "上传失败：HTTP ${response.code}" }
+        }
+    }.onFailure { Log.e(TAG, "uploadFile failed", it) }
 
     /** 确保 WebDAV 目录存在：MKCOL，已存在（405）也视为成功。 */
     private fun ensureDirectory(base: String, auth: String?) {
@@ -120,6 +160,7 @@ object WebDavBackup {
     fun listBackups(context: Context): Result<List<String>> = runCatching {
         val base = WebDavConfig.baseUrl(context).trim().trimEnd('/')
         require(base.isNotBlank()) { "未配置 WebDAV 服务器地址" }
+        require(base.startsWith("https://")) { "WebDAV 地址必须是 https（Basic 认证密码不能走明文）" }
         val username = WebDavConfig.username(context)
         val password = WebDavConfig.password(context)
         val auth = if (username.isNotEmpty()) Credentials.basic(username, password) else null
@@ -134,29 +175,61 @@ object WebDavBackup {
         }
     }.onFailure { Log.e(TAG, "listBackups failed", it) }
 
-    /** 从云端下载一个备份文件的内容。 */
-    fun download(context: Context, fileName: String): Result<ByteArray> = runCatching {
+    /** 从云端下载一个备份文件到 cacheDir（流式写盘，名字过白名单）。 */
+    fun downloadToFile(context: Context, fileName: String): Result<File> = runCatching {
+        val name = requireSafeName(fileName)
         val base = WebDavConfig.baseUrl(context).trim().trimEnd('/')
         require(base.isNotBlank()) { "未配置 WebDAV 服务器地址" }
+        require(base.startsWith("https://")) { "WebDAV 地址必须是 https（Basic 认证密码不能走明文）" }
         val username = WebDavConfig.username(context)
         val password = WebDavConfig.password(context)
         val auth = if (username.isNotEmpty()) Credentials.basic(username, password) else null
-        val request = Request.Builder().url("$base/$DIR_NAME/$fileName")
+        val target = File(context.cacheDir, "webdav-download.zip")
+        val request = Request.Builder().url("$base/$DIR_NAME/$name")
             .apply { auth?.let { header("Authorization", it) } }
             .get().build()
-        client.newCall(request).execute().use { response ->
-            check(response.code in 200..299) { "下载失败：HTTP ${response.code}" }
-            response.body?.bytes() ?: error("下载内容为空")
+        try {
+            client.newCall(request).execute().use { response ->
+                check(response.code in 200..299) { "下载失败：HTTP ${response.code}" }
+                val body = response.body ?: error("下载内容为空")
+                // 边下边写，顺便卡住体积，避免服务端回一个巨大文件把存储冲满。
+                val limit = BackupManager.maxArchiveBytes()
+                body.byteStream().use { input ->
+                    target.outputStream().use { out ->
+                        val chunk = ByteArray(64 * 1024)
+                        var total = 0L
+                        while (true) {
+                            val read = input.read(chunk)
+                            if (read < 0) break
+                            total += read
+                            require(total <= limit) { "备份文件过大（本机上限 ${limit / 1024 / 1024} MB）" }
+                            out.write(chunk, 0, read)
+                        }
+                    }
+                }
+                check(target.length() > 0) { "下载内容为空" }
+            }
+        } catch (e: Exception) {
+            target.delete()
+            throw e
         }
-    }.onFailure { Log.e(TAG, "download failed", it) }
+        target
+    }.onFailure { Log.e(TAG, "downloadToFile failed", it) }
+
+    /** 旧接口：下载到内存（仅用于小包；正常恢复走 [downloadToFile]）。 */
+    fun download(context: Context, fileName: String): Result<ByteArray> =
+        downloadToFile(context, fileName).mapCatching { it.readBytes() }
 
     /** 从 WebDAV PROPFIND 的 XML 里解析出备份文件名。 */
     private fun parseFileNames(xml: String): List<String> {
         val regex = Regex("<[^>]*href[^>]*>([^<]+)</[^>]*href[^>]*>", RegexOption.IGNORE_CASE)
         val result = mutableListOf<String>()
         for (m in regex.findAll(xml)) {
-            val name = m.groupValues[1].trim().substringAfterLast('/').trim()
-            if (name.endsWith(".zip")) result.add(name)
+            // 服务器可能回 URL 编码的名字（空格 %20 等），先解码再取末段。
+            val raw = m.groupValues[1].trim()
+            val decoded = runCatching { java.net.URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+            val name = decoded.substringAfterLast('/').trim()
+            if (name.endsWith(".zip") && name.matches(SAFE_NAME)) result.add(name)
         }
         return result.distinct().sortedDescending()
     }
@@ -170,7 +243,14 @@ object WebDavBackup {
             return
         }
         val intervalDays = if (frequency == WebDavConfig.Frequency.DAILY) 1L else 7L
-        val request = PeriodicWorkRequestBuilder<WebDavAutoBackupWorker>(intervalDays, TimeUnit.DAYS).build()
+        // 自动备份只在非计费网络跑（几百 MB 不该拿手机流量传），失败按指数退避重试。
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.UNMETERED)
+            .build()
+        val request = PeriodicWorkRequestBuilder<WebDavAutoBackupWorker>(intervalDays, TimeUnit.DAYS)
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
+            .build()
         wm.enqueueUniquePeriodicWork(name, ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 }
