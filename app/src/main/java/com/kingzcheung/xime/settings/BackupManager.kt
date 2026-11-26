@@ -49,8 +49,18 @@ object BackupManager {
     /** 除 kime_settings 外随备份保存的设置文件（字幕显示、手写公式模式、模型下载源）。 */
     internal val SETTINGS_PREFS = listOf("caption_mode", "handwriting", "model_download_source")
 
-    /** 只带其中几个键的设置文件：clipboard_board 里还存着固定条目（pins），备份只带卡片行数、图片高度、图片张数、平铺/列表和图片占用上限。 */
-    internal val PARTIAL_PREFS = mapOf("clipboard_board" to setOf("card_max_lines", "image_height", "recent_image_count", "list_layout", "image_cache_mb"))
+    /**
+     * 只带其中几个键的设置文件：
+     * - `clipboard_board` 里还存着固定条目（pins），备份只带卡片行数、图片高度、图片张数、平铺/列表和图片占用上限；
+     * - `webdav_backup` 带地址、账号、自动备份开关和频率；**密码不带**（存的是 Keystore 密文，换设备／重装后旧密钥
+     *   已不在，带过去也解不开），恢复后需重新填一次；
+     * - `online_speech_api` 带地址、模型、App ID 和自定义模板；**API 密钥不带**（同上）；`status` 是本机测试结果，也不带。
+     */
+    internal val PARTIAL_PREFS = mapOf(
+        "clipboard_board" to setOf("card_max_lines", "image_height", "recent_image_count", "list_layout", "image_cache_mb"),
+        "webdav_backup" to setOf("base_url", "username", "auto_enabled", "frequency"),
+        "online_speech_api" to setOf("base_url", "model", "app_id", "body_template", "text_path"),
+    )
 
     /** 只留 [keys] 里的键（[prefsToJson] 格式）。 */
     internal fun keepKeys(json: String, keys: Set<String>): String {
@@ -222,14 +232,20 @@ object BackupManager {
             fun put(name: String, bytes: ByteArray) {
                 zos.putNextEntry(ZipEntry(name)); zos.write(bytes); zos.closeEntry()
             }
-            put(META_PREFIX + "manifest.json", org.json.JSONObject()
+            val manifest = org.json.JSONObject()
                 .put("app", "CyIME")
                 .put("format", FORMAT_VERSION)
                 .put("versionName", BuildConfig.VERSION_NAME)
                 .put("versionCode", BuildConfig.VERSION_CODE)
                 .put("createdAt", System.currentTimeMillis())
                 .put("personalData", includePersonal)
-                .toString(2).toByteArray(Charsets.UTF_8))
+                .put("models", org.json.JSONArray(installedModelIds(context)))
+                .put("plugins", org.json.JSONArray().also { arr ->
+                    installedPluginSummaries(context).forEach { (id, name) ->
+                        arr.put(org.json.JSONObject().put("id", id).put("name", name))
+                    }
+                })
+            put(META_PREFIX + "manifest.json", manifest.toString(2).toByteArray(Charsets.UTF_8))
             val settings = prefsToJson(context.getSharedPreferences(PREFS_NAME_SETTINGS, Context.MODE_PRIVATE))
             put(META_PREFIX + "settings.json", stripDeviceState(settings).toByteArray(Charsets.UTF_8))
             SETTINGS_PREFS.forEach { name ->
@@ -316,6 +332,97 @@ object BackupManager {
         return if (deployed) Result.success(Unit)
         else Result.failure(Exception("设置已恢复，但输入方案重新部署失败，请在方案设置中重新部署"))
     }
+
+    /** 本机已下载的模型 id（`filesDir/models/<id>/`）；只用于写进备份清单，不依赖任何模型索引。 */
+    internal fun installedModelIds(context: Context): List<String> =
+        File(context.filesDir, "models").listFiles().orEmpty()
+            .filter { it.isDirectory }.map { it.name }.sorted()
+
+    /** 已安装插件的（id，显示名）。插件框架未初始化时返回空，不让备份报错。 */
+    internal fun installedPluginSummaries(context: Context): List<Pair<String, String>> = runCatching {
+        if (!com.kingzcheung.xime.plugin.core.runtime.PluginManager.isInitialized) {
+            return@runCatching emptyList<Pair<String, String>>()
+        }
+        com.kingzcheung.xime.plugin.core.runtime.PluginManager.getAllInstallPlugins()
+            .map { it.id to it.name }.sortedBy { it.first }
+    }.getOrDefault(emptyList())
+
+    /** 备份包里的 `manifest.json`；旧备份没有这个清单或读不出来时 null。 */
+    internal fun backupManifest(bytes: ByteArray): org.json.JSONObject? = runCatching {
+        ZipInputStream(bytes.inputStream()).use { input ->
+            var entry = input.nextEntry
+            while (entry != null) {
+                if (incomingEntry(entry.name) == META_PREFIX + "manifest.json") {
+                    val out = java.io.ByteArrayOutputStream()
+                    val chunk = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(chunk)
+                        if (n <= 0) break
+                        out.write(chunk, 0, n)
+                    }
+                    return@use org.json.JSONObject(out.toString("UTF-8"))
+                }
+                entry = input.nextEntry
+            }
+            null
+        }
+    }.getOrNull()
+
+    /** 恢复后要补的东西：备份里有、本机没有的模型和插件，以及需要重新填一次的密钥。 */
+    data class RestoreReport(
+        val missingModels: List<String> = emptyList(),
+        val missingPlugins: List<String> = emptyList(),
+        val needsSecrets: List<String> = emptyList(),
+    ) {
+        val isEmpty: Boolean get() = missingModels.isEmpty() && missingPlugins.isEmpty() && needsSecrets.isEmpty()
+    }
+
+    /**
+     * 拿备份包里的 manifest 和本机现状对比，算出「重装后还要补什么」。只读，不改任何数据。
+     *
+     * 模型目录（models/）和插件本体（plugins/）不在备份包里，所以这一份清单就是恢复后唯一能看到
+     * “少了哪几个”的地方；密钥类（WebDAV 密码、在线语音 API 密钥）备份时有意剔除，也要在这里提醒重填。
+     */
+    fun restoreReport(context: Context, bytes: ByteArray): RestoreReport = runCatching {
+        val manifest = backupManifest(bytes) ?: return RestoreReport()
+
+        val modelRoot = File(context.filesDir, "models")
+        val models = manifest.optJSONArray("models")
+        val missingModels = buildList {
+            for (i in 0 until (models?.length() ?: 0)) {
+                val id = models?.optString(i).orEmpty()
+                if (id.isNotBlank() && !File(modelRoot, id).isDirectory) add(id)
+            }
+        }
+
+        val plugins = manifest.optJSONArray("plugins")
+        val missingPlugins = buildList {
+            val installed = installedPluginSummaries(context).map { it.first }.toSet()
+            for (i in 0 until (plugins?.length() ?: 0)) {
+                val obj = plugins?.optJSONObject(i) ?: continue
+                val id = obj.optString("id")
+                if (id.isBlank() || id in installed) continue
+                add(obj.optString("name").ifBlank { id })
+            }
+        }
+
+        val needsSecrets = buildList {
+            val webdav = context.getSharedPreferences("webdav_backup", Context.MODE_PRIVATE)
+            if (webdav.getString("base_url", "").orEmpty().isNotBlank() &&
+                webdav.getString("password", null).isNullOrBlank()
+            ) add("WebDAV 密码")
+            val asr = context.getSharedPreferences("online_speech_api", Context.MODE_PRIVATE)
+            val asrConfigured = asr.getString("base_url", "").orEmpty().isNotBlank() ||
+                asr.getString("model", "").orEmpty().isNotBlank()
+            if (asrConfigured && asr.getString("api_key", "").orEmpty().isBlank()) add("在线语音 API 密钥")
+        }
+
+        RestoreReport(missingModels, missingPlugins, needsSecrets)
+    }.getOrDefault(RestoreReport())
+
+    /** 同 [importBackup]，额外把「恢复后还缺什么」一并算好交给界面。 */
+    suspend fun importBackupWithReport(context: Context, bytes: ByteArray): Result<RestoreReport> =
+        importBackup(context, bytes).map { restoreReport(context, bytes) }
 
     /** 校验 zip 条目路径并解压覆盖（rime 文件 + META 元数据路由），Android 入口。 */
     fun restoreArchive(context: Context, bytes: ByteArray): Result<Unit> {

@@ -67,6 +67,8 @@ fun BackupSettingsContent(onBack: () -> Unit, onNavigateToWebDav: () -> Unit = {
     val busy = busyOp != null
     var message by remember { mutableStateOf<String?>(null) }
     var pendingImport by remember { mutableStateOf<ByteArray?>(null) }
+    /** 恢复完成后算出来的「还需要补什么」：模型、插件、要重填的密钥。 */
+    var restoreReport by remember { mutableStateOf<BackupManager.RestoreReport?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
@@ -111,16 +113,39 @@ fun BackupSettingsContent(onBack: () -> Unit, onNavigateToWebDav: () -> Unit = {
                     busyOp = "import"
                     message = null
                     scope.launch {
-                        val result = withContext(Dispatchers.IO) { BackupManager.importBackup(context, bytes) }
+                        val result = withContext(Dispatchers.IO) { BackupManager.importBackupWithReport(context, bytes) }
                         busyOp = null
                         message = result.fold(
                             onSuccess = { "恢复完成，设置已生效" },
                             onFailure = { "恢复失败：${it.message ?: "未知错误"}" }
                         )
+                        result.getOrNull()?.takeUnless { it.isEmpty }?.let { restoreReport = it }
                     }
                 }) { Text("覆盖并恢复") }
             },
             dismissButton = { TextButton(onClick = { pendingImport = null }) { Text("取消") } }
+        )
+    }
+
+    restoreReport?.let { report ->
+        AlertDialog(
+            onDismissRequest = { restoreReport = null },
+            title = { Text("恢复完成，还需补这些") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (report.missingModels.isNotEmpty()) {
+                        Text("要重新下载的模型：" + report.missingModels.joinToString("、"))
+                    }
+                    if (report.missingPlugins.isNotEmpty()) {
+                        Text("要重新安装的插件：" + report.missingPlugins.joinToString("、"))
+                    }
+                    if (report.needsSecrets.isNotEmpty()) {
+                        Text("要重新填一次的密码：" + report.needsSecrets.joinToString("、"))
+                    }
+                    Text("模型和插件本体不在备份包里，其余设置、词库、方案已恢复。")
+                }
+            },
+            confirmButton = { TextButton(onClick = { restoreReport = null }) { Text("知道了") } }
         )
     }
 
@@ -177,7 +202,7 @@ fun BackupSettingsContent(onBack: () -> Unit, onNavigateToWebDav: () -> Unit = {
                         onCheckedChange = { includePluginConfig = it; BackupChoices.setIncludePluginConfig(context, it) }
                     )
                     Text(
-                        text = "设置、主题、布局和固定的剪贴板记录总会备份；勾选的插件配置（含密钥）和剪贴板历史才备份；不含模型、图片和插件本体。",
+                        text = "设置、主题、布局和固定的剪贴板记录总会备份；勾选的插件配置（含密钥）和剪贴板历史才备份；不含模型、图片和插件本体。WebDAV 密码、在线语音密钥也不带，恢复后要重填。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)

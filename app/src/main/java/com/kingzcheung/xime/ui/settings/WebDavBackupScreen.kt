@@ -62,6 +62,8 @@ fun WebDavBackupScreen(onBack: () -> Unit) {
     var cloudFiles by remember { mutableStateOf<List<String>>(emptyList()) }
     var listed by remember { mutableStateOf(false) }
     var pendingRestore by remember { mutableStateOf<String?>(null) }
+    /** 恢复后「还需要补什么」：模型、插件、要重填的密钥。 */
+    var restoreReport by remember { mutableStateOf<BackupManager.RestoreReport?>(null) }
 
     fun persist() = WebDavConfig.save(context, baseUrl, username, password)
 
@@ -261,7 +263,7 @@ fun WebDavBackupScreen(onBack: () -> Unit) {
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {
                                 WebDavBackup.download(context, fileName).fold(
-                                    onSuccess = { bytes -> BackupManager.importBackup(context, bytes) },
+                                    onSuccess = { bytes -> BackupManager.importBackupWithReport(context, bytes) },
                                     onFailure = { Result.failure(it) }
                                 )
                             }
@@ -270,10 +272,33 @@ fun WebDavBackupScreen(onBack: () -> Unit) {
                                 onSuccess = { "恢复完成，设置已生效" },
                                 onFailure = { "恢复失败：${it.message ?: "未知错误"}" }
                             )
+                            result.getOrNull()?.takeUnless { it.isEmpty }?.let { restoreReport = it }
                         }
                     }) { Text("下载并恢复") }
                 },
                 dismissButton = { TextButton(onClick = { pendingRestore = null }) { Text("取消") } }
+            )
+        }
+
+        restoreReport?.let { report ->
+            AlertDialog(
+                onDismissRequest = { restoreReport = null },
+                title = { Text("恢复完成，还需补这些") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (report.missingModels.isNotEmpty()) {
+                            Text("要重新下载的模型：" + report.missingModels.joinToString("、"))
+                        }
+                        if (report.missingPlugins.isNotEmpty()) {
+                            Text("要重新安装的插件：" + report.missingPlugins.joinToString("、"))
+                        }
+                        if (report.needsSecrets.isNotEmpty()) {
+                            Text("要重新填一次的密码：" + report.needsSecrets.joinToString("、"))
+                        }
+                        Text("模型和插件本体不在备份包里，其余设置、词库、方案已恢复。")
+                    }
+                },
+                confirmButton = { TextButton(onClick = { restoreReport = null }) { Text("知道了") } }
             )
         }
     }

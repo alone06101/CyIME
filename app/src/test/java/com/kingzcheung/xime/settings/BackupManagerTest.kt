@@ -548,6 +548,45 @@ class BackupManagerTest {
     }
 
     @Test
+    fun `webdav and online speech config keep their non-secret keys only`() {
+        fun kept(prefs: String, json: String) =
+            org.json.JSONObject(BackupManager.keepKeys(json, BackupManager.PARTIAL_PREFS.getValue(prefs)))
+
+        val webdav = kept(
+            "webdav_backup",
+            """{"base_url":{"t":"s","v":"https://dav.example.com"},"username":{"t":"s","v":"me"},"password":{"t":"s","v":"enc:AAAA"},"auto_enabled":{"t":"b","v":true},"frequency":{"t":"s","v":"weekly"}}"""
+        )
+        assertEquals("https://dav.example.com", webdav.getJSONObject("base_url").getString("v"))
+        assertEquals("me", webdav.getJSONObject("username").getString("v"))
+        assertEquals("weekly", webdav.getJSONObject("frequency").getString("v"))
+        assertEquals(true, webdav.getJSONObject("auto_enabled").getBoolean("v"))
+        assertTrue(!webdav.has("password"))
+
+        val speech = kept(
+            "online_speech_api",
+            """{"base_url":{"t":"s","v":"https://api.groq.com/openai/v1"},"model":{"t":"s","v":"whisper-large-v3-turbo"},"api_key":{"t":"s","v":"sk-x"},"app_id":{"t":"s","v":"100"},"status":{"t":"s","v":"ok"}}"""
+        )
+        assertEquals("whisper-large-v3-turbo", speech.getJSONObject("model").getString("v"))
+        assertEquals("100", speech.getJSONObject("app_id").getString("v"))
+        assertTrue(!speech.has("api_key"))
+        assertTrue(!speech.has("status"))
+    }
+
+    @Test
+    fun `manifest is readable from the archive and old backups without one stay fine`() {
+        val manifest = """{"app":"CyIME","format":2,"models":["grammar-a","asr-b"],"plugins":[{"id":"com.example.ai","name":"AI 助手"}]}"""
+        val bytes = zipOfText(linkedMapOf(BackupManager.META_PREFIX + "manifest.json" to manifest))
+        val parsed = BackupManager.backupManifest(bytes)
+        assertEquals(2, parsed?.getJSONArray("models")?.length())
+        assertEquals("AI 助手", parsed?.getJSONArray("plugins")?.getJSONObject(0)?.getString("name"))
+
+        val old = zipOfText(linkedMapOf(BackupManager.META_PREFIX + "settings.json" to "{}"))
+        assertEquals(null, BackupManager.backupManifest(old))
+        val newer = zipOfText(linkedMapOf(NewerBackupNames.META_PREFIX + "manifest.json" to manifest))
+        assertEquals(2, BackupManager.backupManifest(newer)?.getJSONArray("models")?.length())
+    }
+
+    @Test
     fun `a keyboard config that names the store index only the newer way still gives its mirrors`() {
         val yaml = com.charleskorn.kaml.Yaml(configuration = com.charleskorn.kaml.YamlConfiguration(strictMode = false))
         fun mirrors(text: String) = yaml.decodeFromString(XimeConfig.serializer(), text).storeIndex?.baseUrls
