@@ -19,10 +19,12 @@
 >     - **单测**：`Full Test Suite`（`test.yml`）只有一个 `workflow_dispatch`，**push 到 `main` 不会自动跑**。Actions 里没多出新 run 不等于通过，不能拿“没生成 run”当绿灯；要验证就去 Actions 页点 `Run workflow`，或命令行 `gh workflow run test.yml --repo alone06101/CyIME`。
 >     - **出包**：`build-apk.yml` 也是手动触发。**填 `v<上游版本>-fork.N` 才会创建 Release** 并挂上 5 个 ABI 的正式签名 APK；**留空只上传 artifact**，适合只验证能不能编译、不想发版的时候。
 >     - **自动跑的只有 `build.yml`**（Build and Test APK，push 触发）：内容是单测 + debug APK + 插件 XIPK。单测绿时它就是绿的；之前那一串红是 `ClipboardGroupRenderTest`（实例单例残留、`text:` 成员被异步清理）、`T9GlideInputTest`（5s 超时太短）、`ToolInfoPanelRenderTest`（堆不够 OOM）三个渲染用例修之前的旧记录，不是本 fork 的回归信号。
->     - `build-apk.yml` 的 release 构建带 `-x :app:prepareOfflineTranslateLibraries`，跳过上游已 404 的离线翻译库任务，所以它能编过而上游原始命令不一定。
+>     - `build-apk.yml` 的 release 构建带 `-x :app:prepareOfflineTranslateLibraries`，跳过上游已 404 的离线翻译库任务，所以它能编过而上游原始命令不一定；代价是**正式包里不含离线翻译库**。
+>     - **失败怎么定位**：`Run Unit Tests` 会把 gradle 输出 `tee` 到 `/tmp/unit-tests.log`，失败时再用 `::error::` 把 `e: file` / `error:` / `FAILED` 行写成 check-run annotation。查错用 `/commits/<sha>/check-runs` 拿 id，再读 `/check-runs/<id>/annotations`，不需要去拉 Azure blob 上的完整日志（部分网络环境拉到就 TLS 断开，例如本机 chroot 里 `productionresultssa*.blob.core.windows.net` 直接 EOF）。
+>     - **单测内存**：`app/build.gradle.kts` 里固定 `maxHeapSize = 2g`、`maxParallelForks = 1`。曾经开过 3g，在 7GB 的 runner 上容易被宿主 OOM-kill，症状是 `test-results` 目录为空、反而看不到真正的编译错。
 >     - **同步上游**：`sync-upstream.yml` 每天 UTC 02:30 检查 `Cyletix/CyIME`，上游无新提交就直接跳过（不建分支、不开 PR）；GitHub 的定时任务实际会比 cron 晚几个小时排队，属正常。
 >
-> Release 标签形如 `v<上游版本>-fork.N`。
+> Release 标签形如 `v<上游版本>-fork.N`。当前最新：`v1.15.107-fork.11`（包含备份白名单与恢复清单、万象回滚、WebDAV 流式上传与文件名白名单、词库分片 id 修复等审查修正）。
 
 **CyIME** 是 Cyletix 开发的 Android 输入法，基于 [Rime](https://rime.im/) 引擎，fork自Xime。中文拼音九键双拼五笔笔画仓颉注音英日西俄法德意越，离线语音手写拍照OCR识别，另有给听障人士用的实时字幕。
 
