@@ -102,11 +102,12 @@ class T9GlideInputTest {
         show(true)
         val five = centerOf("JKL"); val two = centerOf("ABC"); val four = centerOf("GHI"); val nine = centerOf("WXYZ")
         board.performTouchInput { down(0, nine); advanceEventTime(30); down(1, five); moveTo(1, two); up(0); moveTo(1, four); up(1) }
-        rule.waitUntil(5000) { input.length >= 4 }
+        // 划的词要在后台按词表比对完才送进来，CI 的机器上 5 秒不够（实测 6.5 秒就超时了），给足余量。
+        rule.waitUntil(15_000) { input.length >= 4 }
         assertEquals("9524", input)
         // 点按的手指等划完才抬：一样两样都出。
         board.performTouchInput { down(0, nine); advanceEventTime(30); down(1, five); moveTo(1, two); moveTo(1, four); up(1); up(0) }
-        rule.waitUntil(5000) { input.length >= 8 }
+        rule.waitUntil(15_000) { input.length >= 8 }
         // 划的词在后台比对，和后抬起的点按谁先到都行，两样都不能丢。
         org.junit.Assert.assertTrue(input, input == "95249524" || input == "95245249")
     }

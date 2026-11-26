@@ -1,6 +1,7 @@
 package com.kingzcheung.xime.ui.render
 
 import android.content.Context
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import com.kingzcheung.xime.ui.theme.XimeTheme
@@ -75,7 +76,10 @@ class ClipboardGroupRenderTest {
 
     @Test fun dragGroupAheadOfTextThenRenameAndDeleteByButton() {
         val store = ClipboardGroupStore.getInstance(rule.activity)
-        store.add("收藏", listOf("text:7"))
+        // 这个 store 是进程级单例，同一个 JVM 里别的测试可能已经建过分组：先清空，
+        // 否则 add("收藏") 会因重名返回错误、拿到的是别人那条空分组，后面断言就炸在 members 上。
+        store.state.value.groups.forEach { store.delete(it.id) }
+        assertNull(store.add("收藏", listOf("text:7")))
         val id = store.state.value.groups.single().id
         rule.setContent { XimeTheme(darkTheme = true) { ClipboardGroupSettingsContent(onBack = {}) } }
         val from = rule.onNodeWithTag("clipboard-order:group:$id").fetchSemanticsNode().boundsInRoot.center
