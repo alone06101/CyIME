@@ -74,7 +74,18 @@ jobs:
         run: chmod +x gradlew
         
       - name: Run Unit Tests
-        run: ./gradlew :app:testDebugUnitTest :plugin-core:testDebugUnitTest --no-daemon
+        run: |
+          set -o pipefail
+          ./gradlew :app:testDebugUnitTest :plugin-core:testDebugUnitTest --no-daemon 2>&1 | tee /tmp/unit-tests.log
+
+      # CI 的完整日志在 Azure blob 上，某些网络环境拉不下来；把关键错误行直接写成 annotation，
+      # 这样用 checks/annotations 接口就能看到“到底哪一行没编过”。GitHub 每个 step 最多保留 10 条。
+      - name: 失败时把编译/测试错误写进注解
+        if: failure()
+        run: |
+          grep -E "e: file|e: |error:|FAILED|Execution failed|Caused by|Could not resolve" /tmp/unit-tests.log | head -10 | sed 's/^/::error::/' || true
+          echo "--- 日志末尾 20 行 ---"
+          tail -n 20 /tmp/unit-tests.log || true
         
       - name: Generate Test Report
         if: always()

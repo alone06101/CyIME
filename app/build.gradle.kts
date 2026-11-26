@@ -95,7 +95,12 @@ android {
         unitTests.isIncludeAndroidResources = true
         // Compose/Robolectric 渲染测试一跑就是几十帧位图（ToolInfoPanelRenderTest 要在动态背景上逐帧画），
         // 默认堆不够，会直接 java.lang.OutOfMemoryError: Java heap space。
-        unitTests.all { it.maxHeapSize = "3g" }
+        // 2g 而不是 3g：GitHub runner 共 7GB 内存，堆开到 3g 加上 Metaspace 与 Robolectric 的位图，
+        // 会把进程推到被宿主 OOM-kill 的边缘（症状是测试报告目录为空、反而看不到真正的错）。
+        unitTests.all {
+            it.maxHeapSize = "2g"
+            it.maxParallelForks = 1
+        }
     }
 
     defaultConfig {
