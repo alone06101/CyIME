@@ -1,5 +1,15 @@
 ﻿name: Full Test Suite
 
+# 这个工作流只由 workflow_dispatch 触发：push 到 main 不会自动跑。
+# 改了代码想验证编译与单测，去 Actions 页点「Run workflow」，或：
+#   gh workflow run test.yml --ref main
+# （也可以走 API：POST /repos/<owner>/<repo>/actions/workflows/test.yml/dispatches {\"ref\":\"main\"}）
+#
+# 另外两个容易看错的点：
+# - 出包走 build-apk.yml（Build & Release APK，版本号留空则只出 artifact）；
+# - 上游自带的 build.yml（Build and Test APK）在本 fork 上一直是红的，它要拉上游已 404 的
+#   离线翻译库，不是本 fork 的回归信号，不要拿它判断改动好坏。
+
 permissions:
   contents: read
   actions: read

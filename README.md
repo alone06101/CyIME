@@ -15,6 +15,7 @@
 > 7. **万象拼音运行时更新**：「语言与方案」可检查万象拼音最新版（GitHub API 动态获取，不随 APK 重构建）；语法模型已被自研词组模型取代，无需更新。
 > 8. **词库批量导入**：一次可选多个词库文件（搜狗 scel、txt、Rime 词典等）批量导入，带进度提示。
 > 9. **词库超限自动分割**：导入超过 200 万词的文本词库时，自动切成多个词库继续导入；剪贴板导入与备份包上限也已放宽（512MB / 1GB）。
+> 10. **CI 与自测**：出包用 `.github/workflows/build-apk.yml`（在 Actions 页手动触发，填版本号就顺带发 Release）；跑单测要手动触发 `Full Test Suite`（`test.yml` 只有 `workflow_dispatch`，push 到 main 不会自动跑，别把“没生成 run”当成通过）。上游自带的 `build.yml`（Build and Test APK）在本 fork 上一直是红的，原因是它要拉上游已 404 的离线翻译库，不是本 fork 的回归信号。
 >
 > Release 标签形如 `v<上游版本>-fork.N`。
 
