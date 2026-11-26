@@ -197,12 +197,12 @@ fun BackupSettingsContent(onBack: () -> Unit, onNavigateToWebDav: () -> Unit = {
                     SettingsToggleItem(
                         icon = Icons.TwoTone.Extension,
                         title = "包含插件配置",
-                        subtitle = "AI、翻译等插件的密钥和配置；上传云端时为明文",
+                        subtitle = "AI、翻译等插件的密钥和配置（含在线语音 API 密钥）；上传云端时为明文",
                         checked = includePluginConfig,
                         onCheckedChange = { includePluginConfig = it; BackupChoices.setIncludePluginConfig(context, it) }
                     )
                     Text(
-                        text = "设置、主题、布局和固定的剪贴板记录总会备份；勾选的插件配置（含密钥）和剪贴板历史才备份；不含模型、图片和插件本体。WebDAV 密码、在线语音密钥也不带，恢复后要重填。",
+                        text = "设置、主题、布局和固定的剪贴板记录总会备份；勾选的插件配置（含密钥）和剪贴板历史才备份，在线语音的 API 密钥跟这个开关一起走；不含模型、图片和插件本体。WebDAV 密码不带，恢复后要重填；「我的声纹」随个人数据一起备份。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)

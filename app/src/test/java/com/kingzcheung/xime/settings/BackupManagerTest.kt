@@ -573,6 +573,53 @@ class BackupManagerTest {
     }
 
     @Test
+    fun `online speech api key only rides along with the secret toggle`() {
+        val off = BackupManager.partialKeys("online_speech_api", includeSecrets = false)
+        assertTrue("base_url" in off)
+        assertTrue("api_key" !in off)
+
+        val on = BackupManager.partialKeys("online_speech_api", includeSecrets = true)
+        assertTrue("base_url" in on)
+        assertTrue("api_key" in on)
+
+        // WebDAV 密码存的是 Keystore 密文，换钥解不开，永远不进白名单。
+        assertTrue("password" !in BackupManager.partialKeys("webdav_backup", includeSecrets = true))
+    }
+
+    @Test
+    fun `voice print rides with personal data only`() {
+        assertTrue(BackupManager.isFilesEntry(BackupManager.SPEAKER_PRINT, personal = true))
+        assertTrue(!BackupManager.isFilesEntry(BackupManager.SPEAKER_PRINT, personal = false))
+        assertTrue(BackupManager.isFilesEntry("learning-profiles/x.json", personal = true))
+    }
+
+    @Test
+    fun `online speech api key follows the plugin config switch but webdav password never does`() {
+        val withoutSecrets = BackupManager.partialKeys("online_speech_api", includeSecrets = false)
+        val withSecrets = BackupManager.partialKeys("online_speech_api", includeSecrets = true)
+        assertTrue("api_key" !in withoutSecrets)
+        assertTrue("api_key" in withSecrets)
+        assertTrue("base_url" in withSecrets)
+        // WebDAV 密码存的是 Keystore 密文，换设备解不开，所以不跟着密钥开关走。
+        val webdav = BackupManager.partialKeys("webdav_backup", includeSecrets = true)
+        assertTrue("password" !in webdav)
+        assertTrue("base_url" in webdav)
+        assertTrue("username" in webdav)
+    }
+
+    @Test
+    fun `speaker prints ride along with personal data`() {
+        assertTrue(BackupManager.isFilesEntry("speaker/self.f32", personal = true))
+        assertTrue(BackupManager.isFilesEntry("speaker/known/7.f32", personal = true))
+        assertTrue(BackupManager.isFilesEntry("speaker/known/index.tsv", personal = true))
+        // 不算个人数据时不带
+        assertTrue(!BackupManager.isFilesEntry("speaker/self.f32", personal = false))
+        // 目录里的临时文件和别的格式不跟着走
+        assertTrue(!BackupManager.isFilesEntry("speaker/self.f32.tmp", personal = true))
+        assertTrue(!BackupManager.isFilesEntry("speaker/known/7.wav", personal = true))
+    }
+
+    @Test
     fun `manifest is readable from the archive and old backups without one stay fine`() {
         val manifest = """{"app":"CyIME","format":2,"models":["grammar-a","asr-b"],"plugins":[{"id":"com.example.ai","name":"AI 助手"}]}"""
         val bytes = zipOfText(linkedMapOf(BackupManager.META_PREFIX + "manifest.json" to manifest))

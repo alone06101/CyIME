@@ -55,13 +55,24 @@ object BackupManager {
      * - `clipboard_board` 里还存着固定条目（pins），备份只带卡片行数、图片高度、图片张数、平铺/列表和图片占用上限；
      * - `webdav_backup` 带地址、账号、自动备份开关和频率；**密码不带**（存的是 Keystore 密文，换设备／重装后旧密钥
      *   已不在，带过去也解不开），恢复后需重新填一次；
-     * - `online_speech_api` 带地址、模型、App ID 和自定义模板；**API 密钥不带**（同上）；`status` 是本机测试结果，也不带。
+     * - `online_speech_api` 带地址、模型、App ID 和自定义模板；`status` 是本机测试结果，不带。
+     *   API 密钥是明文存的，**跟着「包含插件配置（含密钥）」开关一起备份**（见 [SECRET_PARTIAL_KEYS]）。
      */
     internal val PARTIAL_PREFS = mapOf(
         "clipboard_board" to setOf("card_max_lines", "image_height", "recent_image_count", "list_layout", "image_cache_mb"),
         WebDavConfig.PREFS to setOf("base_url", "username", "auto_enabled", "frequency"),
         OnlineSpeechApi.PREFS to setOf("base_url", "model", "app_id", "body_template", "text_path"),
     )
+
+    /**
+     * 含密钥的键：只在用户勾选「包含插件配置（含密钥）」时才写进备份包（zip 里是明文，和插件配置同一套约定）。
+     * 在线语音的 API 密钥本来就是明文存 prefs，恢复时原样写回即可，不依赖 Keystore。
+     */
+    internal val SECRET_PARTIAL_KEYS = mapOf(OnlineSpeechApi.PREFS to setOf("api_key"))
+
+    /** 某个 prefs 文件允许往返的键；[includeSecrets] 决定要不要带上密钥类键。 */
+    internal fun partialKeys(prefs: String, includeSecrets: Boolean): Set<String> =
+        PARTIAL_PREFS[prefs].orEmpty() + if (includeSecrets) SECRET_PARTIAL_KEYS[prefs].orEmpty() else emptySet()
 
     /** 只留 [keys] 里的键（[prefsToJson] 格式）。 */
     internal fun keepKeys(json: String, keys: Set<String>): String {
@@ -90,10 +101,18 @@ object BackupManager {
         return minOf(HARD_MAX_ARCHIVE_BYTES, maxOf(32L * 1024 * 1024, byHeap))
     }
 
-    private val BACKUP_SUBDIRS = setOf("learning-profiles", "handwriting_templates", "handwriting_training")
+    private val BACKUP_SUBDIRS = setOf("learning-profiles", "handwriting_templates", "handwriting_training", "speaker")
 
     private val HANDWRITING_FILES = setOf(
         "handwriting_templates/latin.json", "handwriting_templates/kana_och.json", "handwriting_training/samples.jsonl")
+
+    /** 「我的声纹」（字幕区分说话人时用来认出自己）。几百 KB，重装后不用再录一遍。 */
+    internal const val SPEAKER_PRINT = "speaker/self.f32"
+
+    /** 字幕里认过的其他人声纹（`speaker/known/index.tsv` + `<id>.f32`），同一类数据。 */
+    internal fun isKnownVoice(relative: String): Boolean =
+        relative.startsWith("speaker/known/") &&
+            (relative == "speaker/known/index.tsv" || relative.endsWith(".f32"))
 
     /** filesDir 下允许经 `_xime_backup/files/` 往返的文件。 */
     internal fun isFilesEntry(relative: String, personal: Boolean): Boolean = when {
@@ -102,8 +121,10 @@ object BackupManager {
         relative == "user_ngram_cache.json" -> personal
         relative.startsWith("learning-profiles/") && relative.endsWith(".json") &&
             relative.count { it == '/' } == 1 -> personal
-        // 手写：边写边学的模板和训练页录的样本
+        // 手写：边写边学的模板和训练页录的样本；声纹：字幕区分说话人用的「我的声音」和认过的人
         relative in HANDWRITING_FILES -> personal
+        relative == SPEAKER_PRINT -> personal
+        isKnownVoice(relative) -> personal
         else -> false
     }
 
@@ -264,7 +285,8 @@ object BackupManager {
                 val prefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
                 if (prefs.all.isNotEmpty()) put(META_PREFIX + "prefs/$name.json", prefsToJson(prefs).toByteArray(Charsets.UTF_8))
             }
-            PARTIAL_PREFS.forEach { (name, keys) ->
+            PARTIAL_PREFS.forEach { (name, _) ->
+                val keys = partialKeys(name, includePluginConfig)
                 val prefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
                 if (prefs.all.keys.any { it in keys })
                     put(META_PREFIX + "prefs/$name.json", keepKeys(prefsToJson(prefs), keys).toByteArray(Charsets.UTF_8))
@@ -483,8 +505,8 @@ object BackupManager {
                     replace -> json
                     name.startsWith("plugin_cfg_") -> encryptPluginConfig(json)
                     name == PREFS_NAME_SETTINGS -> stripDeviceState(json.toString(Charsets.UTF_8)).toByteArray(Charsets.UTF_8)
-                    // 只认允许的键，备份包写不进固定条目
-                    name in PARTIAL_PREFS -> keepKeys(json.toString(Charsets.UTF_8), PARTIAL_PREFS.getValue(name)).toByteArray(Charsets.UTF_8)
+                    // 只认允许的键，备份包写不进固定条目；密钥类键恢复时一律接受（备份里有说明用户勾选过）
+                    name in PARTIAL_PREFS -> keepKeys(json.toString(Charsets.UTF_8), partialKeys(name, includeSecrets = true)).toByteArray(Charsets.UTF_8)
                     else -> json
                 }
                 restorePrefsJson(context.getSharedPreferences(name, Context.MODE_PRIVATE), data, replace)
