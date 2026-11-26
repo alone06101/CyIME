@@ -86,8 +86,16 @@ object WebDavBackup {
     private val SAFE_NAME = Regex("[A-Za-z0-9._-]+\\.zip")
 
     internal fun requireSafeName(fileName: String): String {
-        val name = fileName.substringAfterLast('/')
-        require(name.isNotBlank() && name.matches(SAFE_NAME)) { "非法的备份文件名" }
+        val trimmed = fileName.trim()
+        // PROPFIND 的 href 可能是纯文件名、绝对路径或完整 URL；带相对路径段（a/b.zip、../x.zip）的一律拒掉，
+        // 以前直接 substringAfterLast('/') 会把 "../other.zip" 洗成 "other.zip" 放过去。
+        val name = when {
+            !trimmed.contains('/') -> trimmed
+            trimmed.startsWith("/") || trimmed.startsWith("http://") || trimmed.startsWith("https://") ->
+                trimmed.substringAfterLast('/')
+            else -> throw IllegalArgumentException("非法的备份文件名")
+        }
+        require(name.isNotBlank() && !name.contains("..") && name.matches(SAFE_NAME)) { "非法的备份文件名" }
         return name
     }
 
