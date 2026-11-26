@@ -209,8 +209,8 @@ object WanxiangUpdate {
         return TargetSnapshot(dir, saved, targets)
     }
 
-    /** 安装失败时还原：旧文件写回，新出现的文件删掉。 */
-    private fun rollback(context: Context, snapshot: TargetSnapshot) {
+    /** 安装失败时还原：旧文件写回，新出现的文件删掉。redeploy 是 suspend，所以这里也要 suspend（由 [update] 调用）。 */
+    private suspend fun rollback(context: Context, snapshot: TargetSnapshot) {
         val rimeDir = SchemaManager.getRimeDir(context)
         snapshot.targets.forEach { rel ->
             val live = File(rimeDir, rel)
