@@ -93,6 +93,9 @@ android {
         unitTests.isReturnDefaultValues = true
         // Robolectric 渲染测试（如候选栏两端按钮对比图）需要真实资源与 assets。
         unitTests.isIncludeAndroidResources = true
+        // Compose/Robolectric 渲染测试一跑就是几十帧位图（ToolInfoPanelRenderTest 要在动态背景上逐帧画），
+        // 默认堆不够，会直接 java.lang.OutOfMemoryError: Java heap space。
+        unitTests.all { it.maxHeapSize = "3g" }
     }
 
     defaultConfig {

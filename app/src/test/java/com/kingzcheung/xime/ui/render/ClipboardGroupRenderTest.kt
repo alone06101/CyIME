@@ -79,8 +79,11 @@ class ClipboardGroupRenderTest {
         // 这个 store 是进程级单例，同一个 JVM 里别的测试可能已经建过分组：先清空，
         // 否则 add("收藏") 会因重名返回错误、拿到的是别人那条空分组，后面断言就炸在 members 上。
         store.state.value.groups.forEach { store.delete(it.id) }
-        assertNull(store.add("收藏", listOf("text:7")))
+        // 用 image: 键而不是 text: — ClipboardManager.syncGroupedRecords 会把「文本记录已从库里消失」的
+        // 成员从分组里剔掉，而本测试只造内存里的假记录，用 text: 时断言会被那条异步清理抢掉。
+        assertNull(store.add("收藏", listOf("image:1")))
         val id = store.state.value.groups.single().id
+        assertEquals(id, store.state.value.members["image:1"])
         rule.setContent { XimeTheme(darkTheme = true) { ClipboardGroupSettingsContent(onBack = {}) } }
         val from = rule.onNodeWithTag("clipboard-order:group:$id").fetchSemanticsNode().boundsInRoot.center
         val to = rule.onNodeWithTag("clipboard-order:TEXT").fetchSemanticsNode().boundsInRoot.center
@@ -96,7 +99,7 @@ class ClipboardGroupRenderTest {
         rule.onNodeWithTag("clipboard-group-name").performTextReplacement("常用")
         rule.onNodeWithTag("clipboard-group-name-save").performClick()
         assertEquals("常用", clipboardTabs(store.state.value)[1].label)
-        assertEquals(id, store.state.value.members["text:7"])
+        assertEquals(id, store.state.value.members["image:1"])
         rule.onNodeWithContentDescription("删除").performClick()
         rule.onNodeWithText("取消").performClick()
         assertEquals(id, store.state.value.groups.single().id)
