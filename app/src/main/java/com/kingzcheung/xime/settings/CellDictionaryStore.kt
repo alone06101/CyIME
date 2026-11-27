@@ -19,6 +19,12 @@ data class InstalledCellDictionary(
     val english: Int = 0,
     /** 笔画词库的词（「词 笔画编码」，没有拼音），只给笔画方案用（StrokeCellDictionary）。 */
     val stroke: Int = 0,
+    /** 没写拼音、按内置词库注上的词（算在 [count] 里，1.16）。 */
+    val annotated: Int = 0,
+    /** 内置词库里本来就有、没再导入的单字。 */
+    val known: Int = 0,
+    /** 导入时按内置词库注过音（1.16）。没注过、又有跳过的行：同一个文件再导入一次会重新转换，不直接用旧结果。 */
+    val readingsChecked: Boolean = false,
 )
 
 @Serializable
@@ -188,9 +194,10 @@ class CellDictionaryStore(val directory: File) {
      * converted line by line, up to [TxtCellDictionary.MAX_BYTES] (万象's base list is 49 MB);
      * SCEL and JSON stay at 16 MB and go through [install].
      */
-    fun installFile(input: InputStream): InstalledCellDictionary = installFileMany(input).first()
+    fun installFile(input: InputStream, annotator: TxtCellDictionary.Annotator? = null): InstalledCellDictionary =
+        installFileMany(input, annotator).first()
 
-    fun installFileMany(input: InputStream): List<InstalledCellDictionary> {
+    fun installFileMany(input: InputStream, annotator: TxtCellDictionary.Annotator? = null): List<InstalledCellDictionary> {
         directory.mkdirs()
         // Left behind when the app was killed mid-import; only imports use this prefix.
         directory.listFiles { file -> file.name.startsWith(".import-") }?.forEach { it.delete() }
@@ -227,24 +234,28 @@ class CellDictionaryStore(val directory: File) {
             val hash = digest.digest().joinToString("") { "%02x".format(it) }
             // Gboard's zip and Microsoft Pinyin's .dctx are unpacked to plain lines first.
             DictionaryImportFormats.toText(source)?.let { text ->
-                try { return installTextParts(text, hash) } finally { text.delete() }
+                try { return installTextParts(text, hash, annotator) } finally { text.delete() }
             }
-            return installTextParts(source, hash)
+            return installTextParts(source, hash, annotator)
         } finally { source.delete() }
     }
 
     /** 文本词库可能超过单库上限：切成多份，分别转成多个词库。 */
-    private fun installTextParts(source: File, hash: String): List<InstalledCellDictionary> {
+    private fun installTextParts(
+        source: File,
+        hash: String,
+        annotator: TxtCellDictionary.Annotator? = null,
+    ): List<InstalledCellDictionary> {
         val chunks = splitTextFile(source)
         val total = chunks.size
-        if (total == 1) return listOf(installText(chunks[0], hash, part = 0, partTotal = 1))
+        if (total == 1) return listOf(installText(chunks[0], hash, part = 0, partTotal = 1, annotator = annotator))
         val result = mutableListOf<InstalledCellDictionary>()
         try {
             chunks.forEachIndexed { index, chunk ->
                 try {
                     // 超限的文件必须带片号/总片数：旧版整包导入时 part0 用的是不带后缀的 id，
                     // 同名缓存命中会直接复用「含全量词条的旧库」，既重复又让上限失效。
-                    result += installText(chunk, hash, part = index + 1, partTotal = total)
+                    result += installText(chunk, hash, part = index + 1, partTotal = total, annotator = annotator)
                 } finally {
                     chunk.delete()
                 }
@@ -302,25 +313,34 @@ class CellDictionaryStore(val directory: File) {
     }
 
     /** Converted outside the lock (a big list takes seconds), then moved in and recorded under it. */
-    private fun installText(source: File, hash: String, part: Int = 0, partTotal: Int = 1): InstalledCellDictionary {
-        // 只有「没切分」的文件用哈希 id；切分过的必须带 pN_ofM，否者会和旧版整包导入的词库撞 id。
+    private fun installText(
+        source: File,
+        hash: String,
+        part: Int = 0,
+        partTotal: Int = 1,
+        annotator: TxtCellDictionary.Annotator? = null,
+    ): InstalledCellDictionary {
+        // 只有「没切分」的文件用哈希 id；切分过的必须带 pN_ofM，否则会和旧版整包导入的词库撞 id。
         val id = if (partTotal <= 1) "local_${hash.take(24)}"
         else "local_${hash.take(24)}_p${part}_of$partTotal"
-        read().installed.firstOrNull { it.id == id }?.let { if (dictionaryFile(id).isFile) return it }
+        // 1.15 导入时跳过了没写拼音的行：现在能注音了（1.16），同一个文件再导入就重新转换一次。
+        fun reusable(it: InstalledCellDictionary) = dictionaryFile(id).isFile &&
+            (annotator == null || it.readingsChecked || it.skipped == 0)
+        read().installed.firstOrNull { it.id == id }?.let { if (reusable(it)) return it }
         val converted = File.createTempFile(".import-", ".tmp", directory)
         val strokeWords = File.createTempFile(".import-", ".tmp", directory)
         try {
             val summary = converted.bufferedWriter().use { output ->
                 strokeWords.bufferedWriter().use { stroke ->
                     output.write(ScelDictionary.rimeHeader("cell_$id"))
-                    TxtCellDictionary.read({ source.inputStream() }, { stroke.append(it).append('\n') }) { output.rimeLine(it) }
+                    TxtCellDictionary.read({ source.inputStream() }, { stroke.append(it).append('\n') }, annotator) { output.rimeLine(it) }
                 }
             }
             return synchronized(lock) {
                 val old = read()
-                old.installed.firstOrNull { it.id == id }?.let { if (dictionaryFile(id).isFile) return@synchronized it }
+                old.installed.firstOrNull { it.id == id }?.let { if (reusable(it)) return@synchronized it }
                 val entry = InstalledCellDictionary(id, "本地词库", "本地导入", summary.count, summary.skipped, "", hash,
-                    summary.english.size, summary.stroke)
+                    summary.english.size, summary.stroke, summary.annotated, summary.known, annotator != null)
                 Files.move(converted.toPath(), dictionaryFile(id).toPath(), StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE)
                 if (summary.stroke == 0) strokeWordsFile(id).delete()

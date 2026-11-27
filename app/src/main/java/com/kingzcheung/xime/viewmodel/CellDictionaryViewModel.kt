@@ -71,8 +71,11 @@ class CellDictionaryViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun import(uri: Uri) = work("正在导入词库…") {
+        // 没写拼音的词按这台手机上的内置词库注音（上游 1.16）；还没部署过词库时照旧跳过。
+        val annotator = com.kingzcheung.xime.settings.PinyinAnnotation.fromRimeDir(
+            com.kingzcheung.xime.settings.SchemaManager.getRimeDir(context))
         val entries = requireNotNull(context.contentResolver.openInputStream(uri)) { "无法打开文件" }
-            .use(store::installFileMany)
+            .use { store.installFileMany(it, annotator) }
         entries.forEach { store.select(it.id, true) }
         summarizeImport(entries)
     }
@@ -81,7 +84,13 @@ class CellDictionaryViewModel(application: Application) : AndroidViewModel(appli
         val total = entries.sumOf { it.count + it.english + it.stroke }
         val skipped = entries.sumOf { it.skipped }
         val stroke = entries.sumOf { it.stroke }
-        val skippedText = if (skipped > 0) "，跳过 $skipped 行（单字或没有拼音）" else ""
+        val annotated = entries.sumOf { it.annotated }
+        val known = entries.sumOf { it.known }
+        val skippedText = buildString {
+            if (annotated > 0) append("，其中 $annotated 个没写拼音，按内置词库注上")
+            if (known > 0) append("，$known 个单字内置词库里已有")
+            if (skipped > 0) append("，跳过 $skipped 行（读不出拼音）")
+        }
         val strokeText = if (stroke > 0) "，其中 $stroke 个笔画编码的词只给笔画输入用" else ""
         val splitText = if (entries.size > 1) "（自动分成 ${entries.size} 个词库）" else ""
         return "已导入「${entries.firstOrNull()?.name ?: "本地词库"}」$total 个词$skippedText$strokeText$splitText，点「应用更改」后生效"
@@ -95,11 +104,14 @@ class CellDictionaryViewModel(application: Application) : AndroidViewModel(appli
             try {
                 val (counts, dictionaries) = withContext(Dispatchers.IO) {
                     writes.withLock {
+                        // 批量导入同样按内置词库注音（上游 1.16）。
+                        val annotator = com.kingzcheung.xime.settings.PinyinAnnotation.fromRimeDir(
+                            com.kingzcheung.xime.settings.SchemaManager.getRimeDir(context))
                         var total = 0; var skipped = 0; var stroke = 0
                         uris.forEachIndexed { index, uri ->
                             state.update { it.copy(message = "正在导入第 ${index + 1}/${uris.size} 个词库…") }
                             val entries = requireNotNull(context.contentResolver.openInputStream(uri)) { "无法打开文件" }
-                                .use(store::installFileMany)
+                                .use { store.installFileMany(it, annotator) }
                             entries.forEach { store.select(it.id, true) }
                             total += entries.sumOf { it.count + it.english + it.stroke }
                             skipped += entries.sumOf { it.skipped }
