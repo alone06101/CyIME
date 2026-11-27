@@ -129,6 +129,7 @@ jobs:
           ./gradlew assembleRelease \
             -PversionCode=$DATE \
             -PversionName="nightly-$DATE-$COMMIT" \
+            -x :app:prepareOfflineTranslateLibraries \
             --no-daemon
 
       - name: Build Plugin XIPKs (Unsigned)
